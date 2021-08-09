@@ -31,7 +31,7 @@ class TransformerSpec(model_spec.SequenceToSequenceModelSpec):
         self.pre_norm = np.dtype("int8").type(pre_norm)
         self.activation = np.dtype("int8").type(activation)
         self.with_relative_position = with_relative_position
-        self.encoder = TransformerEncoderSpec(num_encoder_layers, pre_norm=pre_norm)
+        # self.encoder = TransformerEncoderSpec(num_encoder_layers, pre_norm=pre_norm)
         self.decoder = TransformerDecoderSpec(num_decoder_layers, pre_norm=pre_norm)
 
     @property
@@ -45,7 +45,7 @@ class TransformerSpec(model_spec.SequenceToSequenceModelSpec):
     @property
     def vocabulary_size(self):
         return {
-            "source": self.encoder.embeddings.weight.shape[0],
+            "source": None, # self.encoder.embeddings.weight.shape[0],
             "target": self.decoder.embeddings.weight.shape[0],
         }
 
@@ -80,7 +80,7 @@ class TransformerEncoderLayerSpec(model_spec.LayerSpec):
 class TransformerDecoderLayerSpec(model_spec.LayerSpec):
     def __init__(self):
         self.self_attention = attention_spec.MultiHeadAttentionSpec(self_attention=True)
-        self.attention = attention_spec.MultiHeadAttentionSpec()
+        # self.attention = attention_spec.MultiHeadAttentionSpec()
         self.ffn = FeedForwardSpec()
 
 

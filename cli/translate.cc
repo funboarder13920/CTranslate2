@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
     ("log_throughput", "Log average tokens per second at the end of the translation.",
      cxxopts::value<bool>()->default_value("false"))
     ("log_profiling", "Log execution profiling.",
-     cxxopts::value<bool>()->default_value("false"))
+     cxxopts::value<bool>()->default_value("true"))
     ("inter_threads", "Maximum number of CPU translations to run in parallel.",
      cxxopts::value<size_t>()->default_value("1"))
     ("intra_threads", "Number of OpenMP threads (set to 0 to use the default value).",

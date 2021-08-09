@@ -7,6 +7,7 @@
 #include "ctranslate2/ops/ops.h"
 #include "ctranslate2/profiler.h"
 
+#include <spdlog/spdlog.h>
 namespace ctranslate2 {
 
   static std::unique_ptr<const Sampler> make_sampler(const TranslationOptions& options) {
@@ -115,9 +116,10 @@ namespace ctranslate2 {
     std::vector<TranslationResult> results(source.size(), empty_result);
 
     const size_t max_batch_size = options.support_batch_translation() ? 0 : 1;
+    // switch  of source and target here
     for (const auto& batch : rebatch_input(source, target_prefix, max_batch_size)) {
-      auto batch_results = _seq2seq_model->sample(*_encoder,
-                                                  *_decoder,
+      // spdlog::debug("before sample");
+      auto batch_results = _seq2seq_model->sample(*_decoder,
                                                   batch.source,
                                                   batch.target,
                                                   *make_search_strategy(options),
@@ -131,7 +133,7 @@ namespace ctranslate2 {
                                                   options.return_attention,
                                                   options.replace_unknowns,
                                                   options.normalize_scores);
-
+      // spdlog::debug("after sample");
       for (size_t i = 0; i < batch_results.size(); ++i)
         results[batch.example_index[i]] = std::move(batch_results[i]);
     }
@@ -188,7 +190,7 @@ namespace ctranslate2 {
     _model = model;
     _seq2seq_model = seq2seq_model;
     auto scoped_device_setter = _model->get_scoped_device_setter();
-    _encoder = seq2seq_model->make_encoder();
+    _encoder = nullptr; //seq2seq_model->make_encoder();
     _decoder = seq2seq_model->make_decoder();
   }
 
@@ -196,7 +198,7 @@ namespace ctranslate2 {
     if (!_model)
       return;
     auto scoped_device_setter = _model->get_scoped_device_setter();
-    _encoder.reset();
+    //_encoder.reset();
     _decoder.reset();
     _model.reset();
     _seq2seq_model = nullptr;

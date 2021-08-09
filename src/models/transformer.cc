@@ -93,7 +93,7 @@ namespace ctranslate2 {
                                                           "decoder",
                                                           _num_heads,
                                                           !_with_relative_position,
-                                                          /*with_encoder_attention=*/true,
+                                                          /*with_encoder_attention=*/false,
                                                           _pre_norm,
                                                           _activation_type);
     }

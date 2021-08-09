@@ -1,7 +1,7 @@
 #include "ctranslate2/models/sequence_to_sequence.h"
 
 #include <numeric>
-
+#include <spdlog/spdlog.h>
 namespace ctranslate2 {
   namespace models {
 
@@ -56,8 +56,7 @@ namespace ctranslate2 {
       return _vocabulary_map && !_vocabulary_map->empty() ? _vocabulary_map.get() : nullptr;
     }
 
-    void SequenceToSequenceModel::forward_encoder(layers::Encoder& encoder,
-                                                  const std::vector<std::vector<std::string>>& source,
+    void SequenceToSequenceModel::forward_encoder(const std::vector<std::vector<std::string>>& source,
                                                   StorageView& memory,
                                                   StorageView& memory_lengths) const {
       const auto scoped_device_setter = get_scoped_device_setter();
@@ -70,8 +69,13 @@ namespace ctranslate2 {
       std::tie(ids, memory_lengths) = layers::make_sequence_inputs(source_ids,
                                                                    _device,
                                                                    _preferred_size_multiple);
+      
+      // _embeddings(ids, memory);
+      // if (_position_encoder)
+      //  (*_position_encoder)(memory);
 
-      encoder(ids, memory_lengths, memory);
+      // TODO :fill memory ?
+      // encoder(ids, memory_lengths, memory);
     }
 
     void SequenceToSequenceModel::forward_decoder(layers::Decoder& decoder,
@@ -96,21 +100,20 @@ namespace ctranslate2 {
       ops::LogSoftMax()(logits, log_probs);
     }
 
-    void SequenceToSequenceModel::forward(layers::Encoder& encoder,
-                                          layers::Decoder& decoder,
+    void SequenceToSequenceModel::forward(layers::Decoder& decoder,
                                           const std::vector<std::vector<std::string>>& source,
                                           const std::vector<std::vector<std::string>>& target,
                                           StorageView& log_probs) const {
       const auto scoped_device_setter = get_scoped_device_setter();
       PROFILE("SequenceToSequenceModel::forward");
-      StorageView memory(encoder.output_type(), _device);
+      // StorageView memory(encoder.output_type(), _device);
       StorageView memory_lengths(DataType::INT32, _device);
-      forward_encoder(encoder, source, memory, memory_lengths);
+      // forward_encoder(source, memory, memory_lengths);
 
       layers::DecoderState state = decoder.initial_state(/*iterative_decoding=*/false);
-      state.emplace("memory", std::move(memory));
-      state.emplace("memory_lengths", std::move(memory_lengths));
-      forward_decoder(decoder, state, target, log_probs);
+      // state.emplace("memory", std::move(memory));
+      // state.emplace("memory_lengths", std::move(memory_lengths));
+      forward_decoder(decoder, state, source, log_probs);
     }
 
     std::vector<ScoringResult>
@@ -121,7 +124,7 @@ namespace ctranslate2 {
       const auto scoped_device_setter = get_scoped_device_setter();
       PROFILE("SequenceToSequenceModel::score");
       StorageView log_probs(decoder.output_type(), _device);
-      forward(encoder, decoder, source, target, log_probs);
+      forward(decoder, source, target, log_probs);
 
       const auto target_ids_out = _target_vocabulary->to_ids(target,
                                                              /*add_bos=*/false,
@@ -170,8 +173,7 @@ namespace ctranslate2 {
     }
 
     std::vector<GenerationResult<std::string>>
-    SequenceToSequenceModel::sample(layers::Encoder& encoder,
-                                    layers::Decoder& decoder,
+    SequenceToSequenceModel::sample(layers::Decoder& decoder,
                                     const std::vector<std::vector<std::string>>& source,
                                     const std::vector<std::vector<std::string>>& target_prefix,
                                     const SearchStrategy& search_strategy,
@@ -189,13 +191,17 @@ namespace ctranslate2 {
       PROFILE("SequenceToSequenceModel::sample");
 
       // Encode the sequence.
-      StorageView memory(encoder.output_type(), _device);
+      // TODO: fix this
+      // StorageView memory(decoder.output_type(), _device);
       StorageView memory_lengths(DataType::INT32, _device);
-      forward_encoder(encoder, source, memory, memory_lengths);
+      // forward_encoder(source, memory, memory_lengths);
 
       layers::DecoderState state = decoder.initial_state();
-      state.emplace("memory", std::move(memory));
-      state.emplace("memory_lengths", std::move(memory_lengths));
+      // state.emplace("memory", std::move(memory));
+      // spdlog::debug("after initial state decoder 1");
+      // state.emplace("memory_lengths", std::move(memory_lengths));
+
+      // spdlog::debug("after initial state decoder 2");
 
       std::vector<size_t> output_ids_map;
       if (use_vmap && _vocabulary_map) {
@@ -219,13 +225,14 @@ namespace ctranslate2 {
       }
 
       // Decode.
-      const auto target_prefix_ids = _target_vocabulary->to_ids(target_prefix);
+      const auto target_prefix_ids = _target_vocabulary->to_ids(source);
       const size_t start_id = _target_vocabulary->to_id(_with_target_bos
                                                         ? Vocabulary::bos_token
                                                         : Vocabulary::eos_token);
       const size_t end_id = _target_vocabulary->to_id(Vocabulary::eos_token);
       const size_t batch_size = source.size();
       const std::vector<size_t> start_ids(batch_size, start_id);
+      // spdlog::debug("before decode");
       std::vector<GenerationResult<size_t>> results = decode(
         decoder,
         state,
@@ -242,7 +249,7 @@ namespace ctranslate2 {
         return_scores,
         return_attention || replace_unknowns,
         normalize_scores);
-
+      // spdlog::debug("after decode");
       // Convert generated ids to tokens.
       std::vector<GenerationResult<std::string>> final_results;
       final_results.reserve(results.size());
