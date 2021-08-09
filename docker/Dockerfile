@@ -45,11 +45,14 @@ ENV CUDA_NVCC_FLAGS=${CUDA_NVCC_FLAGS:-"-Xfatbin=-compress-all"}
 ARG CUDA_ARCH_LIST
 ENV CUDA_ARCH_LIST=${CUDA_ARCH_LIST:-"Common"}
 ENV CTRANSLATE2_ROOT=/opt/ctranslate2
+# ENV CT2_VERBOSE=3
+
 
 RUN mkdir build && \
     cd build && \
     cmake -DCMAKE_INSTALL_PREFIX=${CTRANSLATE2_ROOT} \
           -DWITH_CUDA=ON -DWITH_MKL=ON -DWITH_DNNL=ON -DOPENMP_RUNTIME=INTEL \
+          -DENABLE_PROFILING=ON -ENABLE_PROFILING=ON \
           -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" \
           -DCUDA_NVCC_FLAGS="${CUDA_NVCC_FLAGS}" -DCUDA_ARCH_LIST="${CUDA_ARCH_LIST}" .. && \
     VERBOSE=1 make -j$(nproc) install
@@ -71,16 +74,30 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libcublas-11-2 \
         python3-pip \
+        vim \
+        htop \
         && \
     apt-get purge -y cuda-compat-11-2 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN pip install OpenNMT-py flask_cors
+
 ENV CTRANSLATE2_ROOT=/opt/ctranslate2
+# ENV CT2_VERBOSE=3
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CTRANSLATE2_ROOT/lib
 
 COPY --from=builder $CTRANSLATE2_ROOT $CTRANSLATE2_ROOT
 RUN python3 -m pip --no-cache-dir install $CTRANSLATE2_ROOT/*.whl && \
     rm $CTRANSLATE2_ROOT/*.whl
 
-ENTRYPOINT ["/opt/ctranslate2/bin/translate"]
+COPY serv_OpenNMT-py /serv_OpenNMT-py
+WORKDIR /serv_OpenNMT-py
+
+RUN ct2-opennmt-py-converter --model_path release_data/release_model-lm-char-dropout-v2-from-scratch_step_225000_save.pt --output_dir release_data/ctranslate_model
+
+ENV PYTHONPATH "${PYTHONPATH}:/serv_OpenNMT"
+# ENTRYPOINT ["ct2-opennmt-py-converter",  "--model_path", "/models/model-lm-medium-finetune-ubiqus-mode2-2500000-valid-lr-7_step_40000.pt", "--output_dir", "ctranslate2"]
+ENV CT2_VERBOSE=3
+EXPOSE 80
+CMD ["python3", "./server.py", "--config", "./available_models/ctranslate_conf.json", "--port", "80"]

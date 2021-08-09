@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <spdlog/spdlog.h>
 
 #include "type_dispatch.h"
 
@@ -179,13 +180,14 @@ namespace ctranslate2 {
       StorageView split_values(dtype, device);
 
       const StorageView* q = &queries;
+      // spdlog::debug("in multi attention layer");
       if (_pre_norm) {
         _layer_norm(queries, queries_proj);
         q = &queries_proj;
       }
 
       _linear[0](*q, fused_proj);
-
+// spdlog::debug("in multi attention layer 2");
       if (!_self_attention) {
         if (queries_padder)
           queries_padder->add_padding(fused_proj);
@@ -224,13 +226,14 @@ namespace ctranslate2 {
         split_heads(queries_proj, split_queries);
         split_heads(keys_proj, split_keys);
         split_heads(values_proj, split_values);
-
         if (cached_keys != nullptr) {
           if (cached_keys->empty()) {
-            *cached_keys = std::move(split_keys);
+           *cached_keys = std::move(split_keys);
+// spdlog::debug("in dense");
             *cached_values = std::move(split_values);
           } else {
-            StorageView& tmp = keys_proj;  // Reuse storage.
+            StorageView& tmp = keys_proj;  // Reuse storage.#include <spdlog/spdlog.h>
+
             tmp = std::move(*cached_keys);
             ops::Concat(2)({&tmp, &split_keys}, *cached_keys);
             tmp = std::move(*cached_values);
@@ -240,7 +243,7 @@ namespace ctranslate2 {
           split_values.shallow_copy(*cached_values);
         }
       }
-
+// spdlog::debug("in multi attention layer 3");
       StorageView& context = queries_proj;  // Reuse storage.
       dot_product_attention(split_queries,
                             split_keys,
@@ -256,17 +259,20 @@ namespace ctranslate2 {
 
       StorageView& combined = values_proj;  // Reuse storage.
       combine_heads(context, combined);
-
+// spdlog::debug("in multi attention layer 4");
       if (queries_padder) {
         // The time dimension is no longer needed.
         queries_padder->remove_padding(combined);
       }
-
+// spdlog::debug("in multi attention layer 4.1 {} {}", combined.size(), output.size());
       _linear.back()(combined, output);
+      // spdlog::debug("in multi attention layer 4.1.1");
       ops::Add()(queries, output, output);
+      // spdlog::debug("in multi attention layer 4.2");
       if (!_pre_norm) {
         _layer_norm(output, output);
       }
+      // spdlog::debug("in multi attention layer 5");
     }
 
     void MultiHeadAttention::split_heads(StorageView& x, StorageView& y) const {

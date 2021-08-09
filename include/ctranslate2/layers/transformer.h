@@ -137,7 +137,7 @@ namespace ctranslate2 {
                          const std::string& scope,
                          const size_t num_heads,
                          const bool with_position_encoding = true,
-                         const bool with_encoder_attention = true,
+                         const bool with_encoder_attention = false,
                          const bool pre_norm = true,
                          const ops::ActivationType activation_type = ops::ActivationType::ReLU);
 

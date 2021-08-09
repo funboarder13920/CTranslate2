@@ -23,8 +23,7 @@ namespace ctranslate2 {
       virtual std::unique_ptr<layers::Encoder> make_encoder() const = 0;
       virtual std::unique_ptr<layers::Decoder> make_decoder() const = 0;
 
-      void forward_encoder(layers::Encoder& encoder,
-                           const std::vector<std::vector<std::string>>& source,
+      void forward_encoder(const std::vector<std::vector<std::string>>& source,
                            StorageView& memory,
                            StorageView& memory_lengths) const;
 
@@ -33,8 +32,7 @@ namespace ctranslate2 {
                            const std::vector<std::vector<std::string>>& target,
                            StorageView& log_probs) const;
 
-      void forward(layers::Encoder& encoder,
-                   layers::Decoder& decoder,
+      void forward(layers::Decoder& decoder,
                    const std::vector<std::vector<std::string>>& source,
                    const std::vector<std::vector<std::string>>& target,
                    StorageView& log_probs) const;
@@ -46,7 +44,7 @@ namespace ctranslate2 {
             const std::vector<std::vector<std::string>>& target) const;
 
       std::vector<GenerationResult<std::string>>
-      sample(layers::Encoder& encoder,
+      sample(
              layers::Decoder& decoder,
              const std::vector<std::vector<std::string>>& source,
              const std::vector<std::vector<std::string>>& target_prefix = {},

@@ -18,7 +18,7 @@ def _get_model_spec(opt):
     activation_fn = getattr(opt, "pos_ffn_activation_fn", "relu")
 
     reasons = []
-    if opt.encoder_type != "transformer" or opt.decoder_type != "transformer":
+    if opt.encoder_type != "transformer_lm" or opt.decoder_type != "transformer_lm":
         reasons.append(
             "Options --encoder_type and --decoder_type must be 'transformer'"
         )
@@ -82,9 +82,9 @@ class OpenNMTPyConverter(Converter):
 
 
 def set_transformer_spec(spec, variables):
-    set_transformer_encoder(
-        spec.encoder, variables, relative=spec.with_relative_position
-    )
+    # set_transformer_encoder(
+    #     spec.encoder, variables, relative=spec.with_relative_position
+    # )
     set_transformer_decoder(
         spec.decoder, variables, relative=spec.with_relative_position
     )
@@ -151,8 +151,8 @@ def set_transformer_decoder_layer(spec, variables, scope, relative=False):
         relative=relative,
     )
     set_layer_norm(spec.self_attention.layer_norm, variables, "%s.layer_norm_1" % scope)
-    set_multi_head_attention(spec.attention, variables, "%s.context_attn" % scope)
-    set_layer_norm(spec.attention.layer_norm, variables, "%s.layer_norm_2" % scope)
+    # set_multi_head_attention(spec.attention, variables, "%s.context_attn" % scope)
+    # set_layer_norm(spec.attention.layer_norm, variables, "%s.layer_norm_2" % scope)
 
 
 def set_ffn(spec, variables, scope):

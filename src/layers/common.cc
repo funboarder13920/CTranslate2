@@ -5,6 +5,7 @@
 #include "ctranslate2/ops/activation.h"
 #include "device_dispatch.h"
 #include "type_dispatch.h"
+#include <spdlog/spdlog.h>
 
 namespace ctranslate2 {
   namespace layers {
@@ -245,13 +246,16 @@ namespace ctranslate2 {
 
     void Dense::operator()(const StorageView& input, StorageView& output) const {
       PROFILE("Dense");
+      // spdlog::debug("in dense");
       const StorageView* qscale = _partial_qscale.empty() ? _qscale : &_partial_qscale;
       const StorageView* weight = _partial_weight.empty() ? &_weight : &_partial_weight;
       const StorageView* bias = _partial_bias.empty() ? _bias : &_partial_bias;
       const StorageView* compensation = (_partial_u8_shift_compensation.empty()
                                          ? _u8_shift_compensation
                                          : &_partial_u8_shift_compensation);
+                                         // spdlog::debug("in dense 1");
       if (_quantized_gemm) {
+        // spdlog::debug("in dense 2");
         const auto device = input.device();
         StorageView qinput(_weight.dtype(), device);
         StorageView qinput_scale(_qscale->dtype(), device);
@@ -265,8 +269,11 @@ namespace ctranslate2 {
                        /*trans_b=*/true,
                        output,
                        bias);
+                       // spdlog::debug("in dense 2.1");
       } else {
+        // spdlog::debug("in dense 3");
         _gemm_op(input, *weight, output, nullptr, bias);
+        // spdlog::debug("in dense 3.1");
       }
     }
 
