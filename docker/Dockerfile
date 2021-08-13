@@ -91,10 +91,11 @@ COPY --from=builder $CTRANSLATE2_ROOT $CTRANSLATE2_ROOT
 RUN python3 -m pip --no-cache-dir install $CTRANSLATE2_ROOT/*.whl && \
     rm $CTRANSLATE2_ROOT/*.whl
 
-COPY serv_OpenNMT-py /serv_OpenNMT-py
+# COPY serv_OpenNMT-py /serv_OpenNMT-py
+RUN mkdir /serv_OpenNMT-py
 WORKDIR /serv_OpenNMT-py
 
-RUN ct2-opennmt-py-converter --model_path release_data/release_model-lm-char-dropout-v2-from-scratch_step_225000_save.pt --output_dir release_data/ctranslate_model
+# RUN ct2-opennmt-py-converter --model_path release_data/release_model-lm-char-dropout-v2-from-scratch_step_225000_save.pt --output_dir release_data/ctranslate_model
 
 ENV PYTHONPATH "${PYTHONPATH}:/serv_OpenNMT"
 # ENTRYPOINT ["ct2-opennmt-py-converter",  "--model_path", "/models/model-lm-medium-finetune-ubiqus-mode2-2500000-valid-lr-7_step_40000.pt", "--output_dir", "ctranslate2"]

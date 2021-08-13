@@ -22,6 +22,7 @@ namespace ctranslate2 {
       for (dim_t i = 0; i < batch_size; ++i) {
         const dim_t length = ids[i].size();
         lengths.at<int32_t>(i) = length;
+        // spdlog::debug("length in make {}", length);
         max_length = std::max(max_length, length);
       }
 
@@ -95,13 +96,14 @@ namespace ctranslate2 {
                            + std::to_string(num_encodings)
                            + ", but got position "
                            + std::to_string(max_time - 1));
-
+      // spdlog::debug("position encoding {} {} {} {}",  index * depth, index, depth, input.shape().back());
       DEVICE_DISPATCH(input.device(),
                       TYPE_DISPATCH(input.dtype(),
                                     primitives<D>::add_batch_broadcast(encodings.data<T>() + index * depth,
                                                                        input.data<T>(),
                                                                        time * depth,
                                                                        input.size())));
+          // spdlog::debug("position encoding ok");
     }
 
     void PositionEncoder::operator()(const StorageView& input, StorageView& output, dim_t index) {

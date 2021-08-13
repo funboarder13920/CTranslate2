@@ -216,6 +216,7 @@ namespace ctranslate2 {
         }
 
       } else {
+        // spdlog::debug("self attention");
         ops::Split(-1)(fused_proj, queries_proj, keys_proj, values_proj);
         if (queries_padder) {
           // From now on the time dimension is required.
@@ -227,10 +228,11 @@ namespace ctranslate2 {
         split_heads(keys_proj, split_keys);
         split_heads(values_proj, split_values);
         if (cached_keys != nullptr) {
+          // spdlog::debug("cached_keys not nullptr");
           if (cached_keys->empty()) {
            *cached_keys = std::move(split_keys);
-// spdlog::debug("in dense");
             *cached_values = std::move(split_values);
+            // spdlog::debug("cached_keys shape empty {} {} {} {}", cached_keys->shape()[1],cached_keys->shape()[2], cached_keys->shape().front(), cached_keys->shape().back());
           } else {
             StorageView& tmp = keys_proj;  // Reuse storage.#include <spdlog/spdlog.h>
 
@@ -238,6 +240,7 @@ namespace ctranslate2 {
             ops::Concat(2)({&tmp, &split_keys}, *cached_keys);
             tmp = std::move(*cached_values);
             ops::Concat(2)({&tmp, &split_values}, *cached_values);
+            // spdlog::debug("cached_keys shape {} {} {} {}", cached_keys->shape()[1], cached_keys->shape()[2],  cached_keys->shape().front(), cached_keys->shape().back());
           }
           split_keys.shallow_copy(*cached_keys);
           split_values.shallow_copy(*cached_values);
@@ -294,7 +297,6 @@ namespace ctranslate2 {
       const dim_t batch_size = lengths.size();
       const StorageView lengths_host(lengths.to(Device::CPU));
       StorageView mask({batch_size, num_heads, num_queries}, lengths.dtype());
-
       for (dim_t b = 0; b < batch_size; ++b) {
         const auto length = lengths_host.at<int32_t>(b);
         for (dim_t h = 0; h < num_heads; ++h) {

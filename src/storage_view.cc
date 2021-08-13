@@ -4,6 +4,7 @@
 
 #include "device_dispatch.h"
 #include "type_dispatch.h"
+#include <spdlog/spdlog.h>
 
 #define PRINT_MAX_VALUES 6
 

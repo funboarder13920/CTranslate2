@@ -225,14 +225,15 @@ namespace ctranslate2 {
       }
 
       // Decode.
-      const auto target_prefix_ids = _target_vocabulary->to_ids(source);
+      const auto target_prefix_ids = _target_vocabulary->to_ids(source, true);
+      // spdlog::debug("with target bos {}", _with_target_bos);
       const size_t start_id = _target_vocabulary->to_id(_with_target_bos
                                                         ? Vocabulary::bos_token
                                                         : Vocabulary::eos_token);
       const size_t end_id = _target_vocabulary->to_id(Vocabulary::eos_token);
       const size_t batch_size = source.size();
       const std::vector<size_t> start_ids(batch_size, start_id);
-      // spdlog::debug("before decode");
+      // spdlog::debug("check size {}", target_prefix_ids[0].size());
       std::vector<GenerationResult<size_t>> results = decode(
         decoder,
         state,
@@ -257,7 +258,12 @@ namespace ctranslate2 {
       for (size_t i = 0; i < batch_size; ++i) {
         GenerationResult<size_t>& result = results[i];
         auto hypotheses = _target_vocabulary->to_tokens(result.hypotheses);
-
+        /*
+        for (std::vector<std::string>::const_iterator i = hypotheses[0].begin(); i != hypotheses[0].end(); ++i)
+          spdlog::debug("hypotheses {}", *i);
+        for (std::vector<size_t>::const_iterator i = result.hypotheses[0].begin(); i != result.hypotheses[0].end(); ++i)
+          spdlog::debug("hypotheses {}", *i);
+          */
         if (result.has_attention()) {
           // Remove padding and special tokens in attention vectors.
           const size_t offset = size_t(_with_source_bos);

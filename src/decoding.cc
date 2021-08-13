@@ -275,9 +275,10 @@ namespace ctranslate2
     for (dim_t i = 0; i < batch_size; ++i)
     {
       batch_offset[i] = i;
-      topk_ids.at<int32_t>(i) = start_ids[i];
+      topk_ids.at<int32_t>(i) = prefix_ids->front()[0];
     }
 
+    // TODO: fix here for GPU and cpu also, more efficient?
     if (!expand_after_first_step)
     {
       // spdlog::debug("start expand beam search");
@@ -288,13 +289,13 @@ namespace ctranslate2
     }
 
     std::vector<std::vector<bool>> beams_diverged_from_prefix;
-    bool bias_towards_prefix = prefix_ids && _prefix_bias_beta > 0;
+    bool bias_towards_prefix = false; // prefix_ids && _prefix_bias_beta > 0;
     if (bias_towards_prefix)
     {
       beams_diverged_from_prefix = std::vector<std::vector<bool>>(
           batch_size, std::vector<bool>(_beam_size, false));
     }
-    const bool use_hard_prefix = prefix_ids && !bias_towards_prefix;
+    const bool use_hard_prefix = false; // prefix_ids && !bias_towards_prefix;
 
     StorageView logits(dtype, device);
     StorageView log_probs(dtype, device);
@@ -304,30 +305,40 @@ namespace ctranslate2
     StorageView attention_step_device(dtype, device);
 
     StorageView coverage;
+    StorageView ids;
+    StorageView memory_lengths;
     std::unique_ptr<BiasedDecoder> biased_decoder;
-    for (dim_t step = start_step; step < max_step; ++step)
+    size_t prefix_ids_size = prefix_ids->front().size();
+    for (dim_t step = (start_step + prefix_ids_size); step < max_step; ++step)
     {
       // Compute log probs for the current step.
-      /// spdlog::debug("decoder step beam search");
-      if (step==start_step){
-              StorageView ids;
-              StorageView memory_lengths;
-              std::tie(ids, memory_lengths) = layers::make_sequence_inputs(*prefix_ids,
-                                                                   device,
-                                                                   (dim_t)prefix_ids->front().size());
-            expand_to_beam_size(ids, _beam_size);
-            decoder(step,
-              ids,
-              state,
-              &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
-              (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
-      prefix_ids = nullptr;
-      }else{
+      // spdlog::debug("decoder step beam search step: {} {} {}", step, start_step, prefix_ids_size);
+      if (step == start_step + prefix_ids_size)
+      {
+
+        // TOO: batch size must be 1
+        std::tie(ids, memory_lengths) = layers::make_sequence_inputs(*prefix_ids,
+                                                                     device,
+                                                                     (dim_t)prefix_ids->front().size());
+        // expand_to_beam_size(ids, _beam_size);
+        decoder(0,
+                ids,
+                memory_lengths,
+                state,
+                &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
+                (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
+        // spdlog::debug("ids check {}", ids.at<int32_t>({0, 1}));
+        prefix_ids = nullptr;
+        // spdlog::debug("ids check {}", ids.at<int32_t>({0, 1}));
+        // spdlog::debug("logits size {} {} {}", logits.shape().size(), logits.shape().front(), logits.shape().back());
+      }
+      else
+      {
         decoder(step,
-              topk_ids.to(device),
-              state,
-              &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
-              (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
+                topk_ids.to(device),
+                state,
+                &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
+                (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
       }
       // spdlog::debug("end decoder step beam search");
       if (bias_towards_prefix)
@@ -336,7 +347,7 @@ namespace ctranslate2
         {
           biased_decoder = std::make_unique<BiasedDecoder>();
         }
-        spdlog::debug("biased decoder");
+        // spdlog::debug("biased decoder");
         biased_decoder->decode(_prefix_bias_beta,
                                cur_batch_size,
                                step,
@@ -352,9 +363,11 @@ namespace ctranslate2
       }
       // spdlog::debug("end decoder step beam search 2");
       const dim_t vocabulary_size = log_probs.dim(-1);
-      const bool is_expanded = (!expand_after_first_step || step > start_step);
+      const bool is_expanded = (!expand_after_first_step || step >  prefix_ids_size + start_step);
 
       // Multiply by the current beam log probs.
+
+      // spdlog::debug("is expanded {} step {}", is_expanded, step);
       if (is_expanded)
       {
         DEVICE_DISPATCH(
@@ -370,6 +383,7 @@ namespace ctranslate2
       float length_penalty_weight = 1.0;
       if (_length_penalty != 0)
       {
+        // spdlog::debug("length penalty");
         length_penalty_weight = std::pow((5.0 + static_cast<float>(step + 1)) / 6.0, _length_penalty);
         ops::Mul()(log_probs,
                    StorageView(1.f / length_penalty_weight).to(log_probs.dtype()),
@@ -377,16 +391,30 @@ namespace ctranslate2
       }
       // spdlog::debug("end decoder step beam search 4 {} {}", step, min_step);
       // Penalize end_id, if configured.
-      if (step < min_step)
+      if (step < min_step + prefix_ids_size){
+        // spdlog::debug("penalize token");
         penalize_token(log_probs, end_id);
+      }
+      // spdlog::debug("end decoder step beam search 4.1");
 
       // Flatten the probs into a list of candidates.
       log_probs.reshape({cur_batch_size, -1});
+      // spdlog::debug("end decoder step beam search 4.2");
 
       // TopK candidates.
       sampler(log_probs, topk_ids, topk_scores, _beam_size);
+      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,0}));
+      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,1}));
+      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,2}));
+      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,3}));
+      // spdlog::debug("end decoder step beam search 4.3");
+
       if (use_hard_prefix)
+      {
         update_sample_with_prefix(step, topk_ids, topk_scores, *prefix_ids, end_id, batch_offset);
+        // spdlog::debug("end decoder step beam search 4.3.1");
+      }
+      // spdlog::debug("end decoder step beam search 4.4");
 
       topk_log_probs = topk_scores;
       // Recover the true log probs if length penalty was applied.
@@ -394,6 +422,7 @@ namespace ctranslate2
         ops::Mul()(topk_log_probs,
                    StorageView(length_penalty_weight).to(topk_log_probs.dtype()),
                    topk_log_probs);
+
       // spdlog::debug("end decoder step beam search 5");
       // Unflatten the ids.
       gather_indices.resize({cur_batch_size * _beam_size});
@@ -419,6 +448,13 @@ namespace ctranslate2
           beams_diverged_from_prefix[batch_id][i % _beam_size] = diverged;
         }
         topk_ids.at<int32_t>(i) = word_id;
+        spdlog::debug("topk_ids {} {}", word_id, step);
+        spdlog::debug("topk_scores shape {} {} {}",topk_scores.shape().size(), topk_scores.shape().front(),  topk_scores.shape().back());
+        spdlog::debug("topk_scores {}", topk_scores.scalar_at<float>({0, i}));
+        spdlog::debug("logtopk_scores {}", topk_log_probs.scalar_at<float>({0, i}));
+        // spdlog::debug("logits {}", logits.scalar_at<float>({0, 2528}));
+        // spdlog::debug("log_probs {}", log_probs.scalar_at<float>({0, 2528}));
+        
         // On the first step, batches are not yet replicated beam_size times.
         gather_indices.at<int32_t>(i) = (is_expanded
                                              ? beam_id + batch_id * _beam_size
@@ -436,13 +472,25 @@ namespace ctranslate2
       }
       else
       {
-        alive_seq = topk_ids;
+        // spdlog::debug("ids check {}", ids.at<int32_t>({0, 1}));
+        // spdlog::debug("ids check {}", ids.at<int32_t>({1, 1}));
+        // spdlog::debug("ids check {}", topk_ids.at<int32_t>({0, 0}));
+        // spdlog::debug("ids check {}", topk_ids.at<int32_t>({0, 1}));
+        // spdlog::debug("this reshape");
+        expand_to_beam_size(ids, _beam_size);
+        ids.reshape({cur_batch_size, _beam_size, ids.dim(-1)});
+        // spdlog::debug("end this reshape");
+        auto idsDevice = ids.to(topk_ids.device());
+        ops::Concat(-1)({&idsDevice, &topk_ids}, alive_seq);
       }
-
+// spdlog::debug("end this reshape 1");
       topk_log_probs.reshape({cur_batch_size, _beam_size});
-      topk_scores.reshape({cur_batch_size, _beam_size});
-      topk_ids.reshape({cur_batch_size, _beam_size});
+      // spdlog::debug("end this reshape 2");
 
+      topk_scores.reshape({cur_batch_size, _beam_size});
+      // spdlog::debug("end this reshape 3");
+      topk_ids.reshape({cur_batch_size, _beam_size});
+// spdlog::debug("end this reshape 4");
       if (attention_step_device)
       {
         attention_step.copy_from(attention_step_device.to_float());
@@ -503,12 +551,14 @@ namespace ctranslate2
         auto &result = results[batch_id];
         for (dim_t k = 0; k < _beam_size; ++k)
         {
+          // spdlog::debug("inside loop {}", k);
           if (topk_ids.at<int32_t>({i, k}) == static_cast<int32_t>(end_id) || step + 1 == max_step)
           {
+            // spdlog::debug("inside inner loop {}", k);
             if (k == 0)
               top_beam_finished[i] = true;
             float score = topk_scores.scalar_at<float>({i, k});
-            if (normalize_scores)
+            if (false && normalize_scores)
               score /= max_time;
             // Prevent this beam from advancing in the next step.
             TYPE_DISPATCH(dtype, topk_log_probs.at<T>({i, k}) = T(-1e10));
@@ -519,11 +569,13 @@ namespace ctranslate2
               hypothesis.reserve(max_time);
               if (return_attention)
                 attn.reserve(max_time);
-              for (dim_t t = 0; t < max_time; ++t)
+              for (dim_t t = 0+prefix_ids_size; t < max_time; ++t)
               {
+                // problème ici ?
                 const int32_t id = alive_seq.at<int32_t>({i, k, t});
                 if (id == static_cast<int32_t>(end_id))
                   break;
+                // spdlog::debug("debug id {} {} {} {}", id, i, k, t);
                 hypothesis.push_back(id);
                 if (return_attention)
                 {
@@ -531,7 +583,7 @@ namespace ctranslate2
                   attn.emplace_back(attn_vec, attn_vec + alive_attention.dim(-1));
                 }
               }
-
+            // spdlog::debug("debug id score {}", score);
               result.scores.emplace_back(score);
               result.hypotheses.emplace_back(std::move(hypothesis));
               if (return_attention)
@@ -546,10 +598,12 @@ namespace ctranslate2
 
         if (is_finished)
         {
+          // spdlog::debug("sort hypothesis");
           sort_hypotheses(result, num_hypotheses, return_scores);
         }
         else
         {
+          // spdlog::debug("not finished");
           non_finished_index.emplace_back(i);
         }
       }
@@ -559,6 +613,7 @@ namespace ctranslate2
       // If all remaining sentences are finished, no need to go further.
       if (next_batch_size == 0)
       {
+        // spdlog::debug("check expand {}", is_expanded);
         if (!is_expanded)
         {
           // We should ensure that states are replicated before exiting this function.
@@ -618,8 +673,11 @@ namespace ctranslate2
       }
       // spdlog::debug("end decoder step beam search 12");
       topk_ids.reshape({cur_batch_size * _beam_size});
+      // spdlog::debug("end decoder step beam search 12.1");
       topk_log_probs.reshape({cur_batch_size * _beam_size});
+      // spdlog::debug("end decoder step beam search 12.2");
       alive_seq.reshape({cur_batch_size * _beam_size, alive_seq.dim(-1)});
+      // spdlog::debug("end decoder step beam search 12.3");
       if (return_attention)
         alive_attention.reshape({cur_batch_size * _beam_size,
                                  alive_attention.dim(2),
@@ -821,29 +879,23 @@ namespace ctranslate2
     const size_t batch_size = start_ids.size();
     dim_t start_step = 0;
     // spdlog::debug("in decode");
-    spdlog::debug("max length {}", max_length);
-    spdlog::debug("return_alternatives {}", return_alternatives);
+    // spdlog::debug("max length {}", max_length);
     std::vector<GenerationResult<size_t>> expansion_results;
-    spdlog::debug("return_alternatives {}", return_alternatives);
     if (return_alternatives)
     {
-      spdlog::debug("return_alternatives {}", return_alternatives);
       std::vector<std::vector<std::vector<float>>> prefix_attention;
       if (prefix_ids)
       {
-        spdlog::debug("before before init decoder with prefix");
         if (prefix_ids->size() > 1)
           throw std::invalid_argument("Returning alternatives from a prefix is not supported "
                                       "in batch mode");
         if (return_attention)
           prefix_attention.resize(1);
-        // spdlog::debug("before init decoder with prefix");
         initialize_decoder_with_prefix(decoder,
                                        state,
                                        start_ids[0],
                                        prefix_ids->front(),
                                        return_attention ? &prefix_attention[0] : nullptr);
-        // spdlog::debug("init decoder with prefix");
         start_ids[0] = prefix_ids->front().back();
         const dim_t prefix_length = prefix_ids->front().size();
         start_step += prefix_length;
@@ -854,11 +906,11 @@ namespace ctranslate2
       // In this translation mode, we first expand the next "num_hypotheses" candidate words
       // before running the full decoding on each prefix. This is to ensure that we get unique
       // alternatives at this decoding position.
-      spdlog::debug("before beam search");
+      // spdlog::debug("before beam search");
       expansion_results = BeamSearch(num_hypotheses).search(decoder, state, BestSampler(), start_ids, end_id, start_step,
                                                             /*max_length=*/1,
                                                             /*min_length=*/1, output_ids_map, normalize_scores, return_scores, return_attention, num_hypotheses);
-      spdlog::debug("after beam search");
+      // spdlog::debug("after beam search");
       start_ids.resize(batch_size * num_hypotheses);
       for (size_t b = 0; b < batch_size; ++b)
       {
@@ -882,22 +934,22 @@ namespace ctranslate2
                                          prefix_attention[b].end());
             }
           }
-          //spdlog::debug("res hypothesis {}", result.hypotheses[0]);
+          //// spdlog::debug("res hypothesis {}", result.hypotheses[0]);
         }
       }
-      spdlog::debug("prefix_ids");
-      spdlog::debug("prefix_ids {}", (dim_t)prefix_ids->front().size());
+      // spdlog::debug("prefix_ids");
+      // spdlog::debug("prefix_ids {}", (dim_t)prefix_ids->front().size());
       start_step += 1;
       // add prefix size ?
       max_length = std::max(max_length - 1 + (dim_t)(prefix_ids->front().size()), dim_t(0));
       min_length = std::max(min_length - 1 + (dim_t)(prefix_ids->front().size()), dim_t(0));
     }
-    spdlog::debug("before beam search, outside if");
+    // spdlog::debug("before beam search, outside if");
 
-    spdlog::debug("prefix_ids");
-    spdlog::debug("prefix_ids {}", (dim_t)prefix_ids->front().size());
+    // spdlog::debug("prefix_ids");
+    // spdlog::debug("prefix_ids {}", (dim_t)prefix_ids->front().size());
 
-    max_length = std::max(max_length  + (dim_t)(prefix_ids->front().size()), dim_t(0));
+    max_length = std::max(max_length + (dim_t)(prefix_ids->front().size()), dim_t(0));
     min_length = std::max(min_length + (dim_t)(prefix_ids->front().size()), dim_t(0));
     auto results = search_strategy.search(decoder,
                                           state,
@@ -913,7 +965,7 @@ namespace ctranslate2
                                           return_attention,
                                           return_alternatives ? 1 : num_hypotheses,
                                           return_alternatives ? nullptr : prefix_ids);
-    spdlog::debug("after beam search, outside if");
+    // spdlog::debug("after beam search, outside if");
 
     if (return_alternatives)
     {
