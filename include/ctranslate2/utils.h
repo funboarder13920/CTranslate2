@@ -49,7 +49,7 @@ namespace ctranslate2 {
 #  define THROW_EXCEPTION(EXCEPTION, MESSAGE) throw EXCEPTION(MESSAGE)
 #else
 #  define THROW_EXCEPTION(EXCEPTION, MESSAGE)                           \
-  throw Error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + ": " + MESSAGE)
+  throw EXCEPTION(std::string(__FILE__) + ":" + std::to_string(__LINE__) + ": " + MESSAGE)
 #endif
 #define THROW_RUNTIME_ERROR(MESSAGE) THROW_EXCEPTION(std::runtime_error, MESSAGE)
 #define THROW_INVALID_ARGUMENT(MESSAGE) THROW_EXCEPTION(std::invalid_argument, MESSAGE)
