@@ -1,5 +1,6 @@
 FROM nvidia/cuda:11.2.2-devel-ubuntu20.04 as builder
 
+RUN chmod 0777 /tmp
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3-dev \
@@ -20,6 +21,7 @@ ENV PATH=$PATH:/root/cmake-$CMAKE_VERSION-Linux-x86_64/bin
 ENV ONEAPI_VERSION=2021.3.0
 ENV MKL_BUILD=520
 ENV DNNL_BUILD=344
+
 RUN wget -q https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB && \
     apt-key add *.PUB && \
     rm *.PUB && \
@@ -70,6 +72,7 @@ RUN cd python && \
 
 FROM nvidia/cuda:11.2.2-base-ubuntu20.04
 
+RUN chmod 0777 /tmp
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libcublas-11-2 \
@@ -95,7 +98,7 @@ RUN python3 -m pip --no-cache-dir install $CTRANSLATE2_ROOT/*.whl && \
 RUN mkdir /serv_OpenNMT-py
 WORKDIR /serv_OpenNMT-py
 
-# RUN ct2-opennmt-py-converter --model_path release_data/release_model-lm-char-dropout-v2-from-scratch_step_225000_save.pt --output_dir release_data/ctranslate_model
+# RUN ct2-opennmt-py-converter --model_path release_data/model-ref-warmup-8000-lr-1.7-fast-gelu_step_170000.pt --output_dir release_data/ctranslate_model --force
 
 ENV PYTHONPATH "${PYTHONPATH}:/serv_OpenNMT"
 # ENTRYPOINT ["ct2-opennmt-py-converter",  "--model_path", "/models/model-lm-medium-finetune-ubiqus-mode2-2500000-valid-lr-7_step_40000.pt", "--output_dir", "ctranslate2"]

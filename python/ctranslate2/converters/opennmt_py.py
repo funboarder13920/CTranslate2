@@ -8,6 +8,7 @@ from ctranslate2.specs import transformer_spec
 
 _SUPPORTED_ACTIVATIONS = {
     "gelu": common_spec.Activation.GELU,
+    "fast_gelu": common_spec.Activation.GELU,
     "relu": common_spec.Activation.RELU,
 }
 
@@ -100,6 +101,8 @@ def set_transformer_encoder(spec, variables, relative=False):
 
 
 def set_transformer_decoder(spec, variables, relative=False):
+    print(variables.keys())
+    print(len(variables))
     set_input_layers(spec, variables, "decoder", relative=relative)
     set_linear(spec.projection, variables, "generator")
     set_layer_norm(spec.layer_norm, variables, "decoder.layer_norm")
@@ -198,11 +201,13 @@ def set_linear(spec, variables, scope):
     spec.weight = _get_variable(variables, "%s.weight" % scope)
     bias = variables.get("%s.bias" % scope)
     if bias is not None:
+        # print("%s.bias" % scope)
         spec.bias = bias.numpy()
 
 
 def set_embeddings(spec, variables, scope, multiply_by_sqrt_depth=True):
     spec.weight = _get_variable(variables, "%s.weight" % scope)
+    print(spec.weight[0][0])
     spec.multiply_by_sqrt_depth = multiply_by_sqrt_depth
 
 
@@ -211,6 +216,7 @@ def set_position_encodings(spec, variables, scope):
 
 
 def _get_variable(variables, name):
+    # print(name)
     return variables[name].numpy()
 
 

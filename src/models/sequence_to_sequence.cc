@@ -85,9 +85,11 @@ namespace ctranslate2 {
       const auto scoped_device_setter = get_scoped_device_setter();
       PROFILE("SequenceToSequenceModel::forward_decoder");
       const auto target_ids = _target_vocabulary->to_ids(target,
-                                                         /*add_bos=*/true,
+                                                         /*add_bos=*/false,
                                                          /*add_eos=*/false);
 
+      spdlog::debug("check size forward {}", target_ids[0].size());
+      spdlog::debug("check size {}", target_ids.size());
       StorageView ids;
       StorageView lengths;
       std::tie(ids, lengths) = layers::make_sequence_inputs(target_ids,
@@ -128,7 +130,9 @@ namespace ctranslate2 {
 
       const auto target_ids_out = _target_vocabulary->to_ids(target,
                                                              /*add_bos=*/false,
-                                                             /*add_eos=*/true);
+                                                             /*add_eos=*/false);
+      spdlog::debug("check size forward {}", target_ids_out[0].size());
+      spdlog::debug("check size {}", target_ids_out.size());
 
       StorageView gather_ids;
       std::tie(gather_ids, std::ignore) = layers::make_sequence_inputs(target_ids_out,
@@ -231,9 +235,12 @@ namespace ctranslate2 {
                                                         ? Vocabulary::bos_token
                                                         : Vocabulary::eos_token);
       const size_t end_id = _target_vocabulary->to_id(Vocabulary::eos_token);
+      const size_t unk_id = _target_vocabulary->to_id(Vocabulary::unk_token);
       const size_t batch_size = source.size();
       const std::vector<size_t> start_ids(batch_size, start_id);
-      // spdlog::debug("check size {}", target_prefix_ids[0].size());
+      for (size_t i = 0; i < target_prefix_ids[0].size(); ++i) {
+          spdlog::debug("check target prefix {}", target_prefix_ids[0][i]);
+      }
       std::vector<GenerationResult<size_t>> results = decode(
         decoder,
         state,
@@ -243,6 +250,7 @@ namespace ctranslate2 {
         !target_prefix_ids.empty() ? &target_prefix_ids : nullptr,
         !output_ids_map.empty() ? &output_ids_map : nullptr,
         end_id,
+        unk_id,
         max_length,
         min_length,
         num_hypotheses,

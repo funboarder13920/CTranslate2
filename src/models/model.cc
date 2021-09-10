@@ -1,4 +1,5 @@
 #include "ctranslate2/models/model.h"
+#include <spdlog/spdlog.h>
 
 #include <fstream>
 
@@ -172,6 +173,7 @@ namespace ctranslate2 {
     }
 
     void Model::register_variable(const std::string& name, StorageView& variable) {
+      spdlog::debug("name {}", name);
       _variable_index.emplace(std::piecewise_construct,
                               std::forward_as_tuple(name),
                               std::forward_as_tuple(std::move(variable)));

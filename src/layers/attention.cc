@@ -180,11 +180,12 @@ namespace ctranslate2 {
       StorageView split_values(dtype, device);
 
       const StorageView* q = &queries;
-      // spdlog::debug("in multi attention layer");
+      // spdlog::debug("inp {}", q->to(Device::CPU).at<float>({0,0,0}));
       if (_pre_norm) {
         _layer_norm(queries, queries_proj);
         q = &queries_proj;
       }
+      // spdlog::debug("inp norm {}",  q->to(Device::CPU).at<float>({0,0,0}));
 
       _linear[0](*q, fused_proj);
 // spdlog::debug("in multi attention layer 2");
@@ -220,6 +221,7 @@ namespace ctranslate2 {
         ops::Split(-1)(fused_proj, queries_proj, keys_proj, values_proj);
         if (queries_padder) {
           // From now on the time dimension is required.
+          spdlog::debug("queries padder ?");
           queries_padder->add_padding(queries_proj);
           queries_padder->add_padding(keys_proj);
           queries_padder->add_padding(values_proj);

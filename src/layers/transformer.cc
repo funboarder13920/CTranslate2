@@ -322,14 +322,17 @@ namespace ctranslate2
     {
       PROFILE("TransformerDecoder");
       // spdlog::debug("in transformer decoder");
-      // spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().size());
-      // spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().front());
-      // spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().back());
+      spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().size());
+      spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().front());
+      spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().back());
       StorageView layer_in(output_type(), ids.device());
       StorageView layer_out(output_type(), ids.device());
 
-      // spdlog::debug("in transformer decoder 2");
+      spdlog::debug("in transformer decoder 2 {}", ids.to(Device::CPU).at<int32_t>({0,0,0}));
+      if ((dim_t)ids.shape().size() == (dim_t)1)
+        spdlog::debug("in transformer decoder 2 {}", ids.to(Device::CPU).at<int32_t>({1}));
       _embeddings(ids, layer_in);
+      spdlog::debug("in transformer decoder layer in {}", layer_in.to(Device::CPU).at<float>({0,0,0}));
       // spdlog::debug("in transformer decoder 3");
       if (layer_in.rank() == 2)
         layer_in.expand_dims(1);
@@ -338,6 +341,7 @@ namespace ctranslate2
           (*_position_encoder)(layer_in);
         else
           (*_position_encoder)(layer_in, std::max(step, dim_t(0)));
+      // spdlog::debug("in transformer after position encoder {}", layer_in.to(Device::CPU).at<float>({0,0,0}));
       // spdlog::debug("in transformer decoder 4 step {}", step);
 
       const dim_t max_time = layer_in.dim(1);
@@ -366,9 +370,11 @@ namespace ctranslate2
       std::unique_ptr<const Padder> memory_padder;
       std::unique_ptr<const StorageView> memory_lengths_mask;
       // spdlog::debug("in transformer decoder 7");
+
+      spdlog::debug(" layer start {}  {}" , layer_in.dim(0), layer_in.dim(1));
       if (_with_encoder_attention)
       {
-        // spdlog::debug("in transformer decoder 8");
+        spdlog::debug("in transformer decoder 8");
         const StorageView &memory_lengths = state.at("memory_lengths");
         memory_lengths_mask = std::make_unique<StorageView>(
             layers::MultiHeadAttention::prepare_length_mask(memory_lengths,
@@ -418,6 +424,7 @@ namespace ctranslate2
                       input_padder.get(),
                       memory_padder.get());
         layer_in = std::move(layer_out);
+        spdlog::debug(" layer {}  {}", l , layer_in.scalar_at<float>({0,0,0}));
       }
       // spdlog::debug("in transformer decoder middle");
       if (step == 0)
@@ -430,16 +437,23 @@ namespace ctranslate2
       {
         if (_output_norm)
           (*_output_norm)(layer_in, layer_in);
+        spdlog::debug(" layer _in after output_norm {}", layer_in.scalar_at<float>({0,0,0}));
+        const StorageView* weight = _proj._partial_weight.empty() ? &_proj._weight : &_proj._partial_weight;
+        const StorageView* bias = _proj._partial_bias.empty() ? _proj._bias : &_proj._partial_bias;
+        spdlog::debug(" _proj bias {}", bias->to(Device::CPU).at<float>({0}));
+        spdlog::debug(" _proj weight {}", weight->to(Device::CPU).at<float>({0,0}));
         // spdlog::debug("in transformer decoder middle 3");
         _proj(layer_in, *logits);
         // spdlog::debug("in transformer decoder middle 4");
         if (step >= 0)
         {
-          // spdlog::debug("logits size {} {} {} {}", logits->shape().size(), logits->shape().front(), logits->shape().back(), logits->shape()[1]);
+          spdlog::debug("logits size {} {} {} {}", logits->shape().size(), logits->shape().front(), logits->shape().back(), logits->shape()[1]);
+          spdlog::debug(" logits {}", logits->to(Device::CPU).scalar_at<float>({0,0,0}));
           // logits->view((*logits).data(), logits->shape());
           if (logits->shape()[1] != 1)
           {
             Shape shape = logits->shape();
+            spdlog::debug(" logits {}", logits->to(Device::CPU).scalar_at<float>({0,shape[1] - 1,0}));
             auto logitsCPU = logits->to(Device::CPU);
             StorageView tmpLogits({shape.front(), shape.back()}, logitsCPU.dtype(), logitsCPU.device());
             // spdlog::debug("before assign -1 {} {} {}", shape.front(), shape[1], shape.back());

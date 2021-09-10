@@ -80,7 +80,7 @@ namespace ctranslate2 {
       void operator()(const StorageView& input, StorageView& output) const;
       void mask_weights(const StorageView& index);
       void reset_mask();
-    private:
+    public:
       bool _packed_weight;
       const StorageView& _weight;
       const StorageView* _bias;
