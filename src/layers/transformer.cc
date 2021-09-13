@@ -424,7 +424,11 @@ namespace ctranslate2
                       input_padder.get(),
                       memory_padder.get());
         layer_in = std::move(layer_out);
-        spdlog::debug(" layer {}  {}", l , layer_in.scalar_at<float>({0,0,0}));
+        //spdlog::debug(" layer shape {} {}  {} {}", l ,  layer_in.shape().size(), layer_in.shape().front(), layer_in.shape().back());
+        //spdlog::debug(" layer shape 1 {}  {}", l , layer_in.dim(1));
+        if (layer_in.dim(0) >1){
+          spdlog::debug(" layer {}  {}", l , layer_in.scalar_at<float>({1, 0,0}));
+        }
       }
       // spdlog::debug("in transformer decoder middle");
       if (step == 0)
@@ -437,7 +441,9 @@ namespace ctranslate2
       {
         if (_output_norm)
           (*_output_norm)(layer_in, layer_in);
-        spdlog::debug(" layer _in after output_norm {}", layer_in.scalar_at<float>({0,0,0}));
+        if (layer_in.dim(0) >1){
+          spdlog::debug(" layer _in after output_norm {}", layer_in.scalar_at<float>({1,0,0}));
+        }
         const StorageView* weight = _proj._partial_weight.empty() ? &_proj._weight : &_proj._partial_weight;
         const StorageView* bias = _proj._partial_bias.empty() ? _proj._bias : &_proj._partial_bias;
         spdlog::debug(" _proj bias {}", bias->to(Device::CPU).at<float>({0}));

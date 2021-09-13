@@ -405,14 +405,14 @@ namespace ctranslate2
 
       // TopK candidates.
       spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({0,0}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({0,15}));
+      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({0,576}));
       spdlog::debug("log probs shape {} {} {}", log_probs.shape().size(), log_probs.dim(0), log_probs.dim(-1));
       if (log_probs.shape().size() > 1 && log_probs.dim(0) >1){
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({1,15}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({2,15}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({3,15}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({4,15}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({5,15}));
+      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({1,576}));
+      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({2,576}));
+      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({3,576}));
+      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({4,576}));
+      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({5,576}));
       }
 
       // Flatten the probs into a list of candidates.
