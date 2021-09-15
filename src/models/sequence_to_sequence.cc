@@ -88,8 +88,6 @@ namespace ctranslate2 {
                                                          /*add_bos=*/false,
                                                          /*add_eos=*/false);
 
-      spdlog::debug("check size forward {}", target_ids[0].size());
-      spdlog::debug("check size {}", target_ids.size());
       StorageView ids;
       StorageView lengths;
       std::tie(ids, lengths) = layers::make_sequence_inputs(target_ids,
@@ -131,8 +129,6 @@ namespace ctranslate2 {
       const auto target_ids_out = _target_vocabulary->to_ids(target,
                                                              /*add_bos=*/false,
                                                              /*add_eos=*/false);
-      spdlog::debug("check size forward {}", target_ids_out[0].size());
-      spdlog::debug("check size {}", target_ids_out.size());
 
       StorageView gather_ids;
       std::tie(gather_ids, std::ignore) = layers::make_sequence_inputs(target_ids_out,
@@ -202,10 +198,8 @@ namespace ctranslate2 {
 
       layers::DecoderState state = decoder.initial_state();
       // state.emplace("memory", std::move(memory));
-      // spdlog::debug("after initial state decoder 1");
       // state.emplace("memory_lengths", std::move(memory_lengths));
 
-      // spdlog::debug("after initial state decoder 2");
 
       std::vector<size_t> output_ids_map;
       if (use_vmap && _vocabulary_map) {
@@ -230,7 +224,7 @@ namespace ctranslate2 {
 
       // Decode.
       const auto target_prefix_ids = _target_vocabulary->to_ids(source, true);
-      // spdlog::debug("with target bos {}", _with_target_bos);
+
       const size_t start_id = _target_vocabulary->to_id(_with_target_bos
                                                         ? Vocabulary::bos_token
                                                         : Vocabulary::eos_token);
@@ -238,9 +232,6 @@ namespace ctranslate2 {
       const size_t unk_id = _target_vocabulary->to_id(Vocabulary::unk_token);
       const size_t batch_size = source.size();
       const std::vector<size_t> start_ids(batch_size, start_id);
-      for (size_t i = 0; i < target_prefix_ids[0].size(); ++i) {
-          spdlog::debug("check target prefix {}", target_prefix_ids[0][i]);
-      }
       std::vector<GenerationResult<size_t>> results = decode(
         decoder,
         state,
@@ -258,7 +249,6 @@ namespace ctranslate2 {
         return_scores,
         return_attention || replace_unknowns,
         normalize_scores);
-      // spdlog::debug("after decode");
       // Convert generated ids to tokens.
       std::vector<GenerationResult<std::string>> final_results;
       final_results.reserve(results.size());
@@ -266,12 +256,7 @@ namespace ctranslate2 {
       for (size_t i = 0; i < batch_size; ++i) {
         GenerationResult<size_t>& result = results[i];
         auto hypotheses = _target_vocabulary->to_tokens(result.hypotheses);
-        /*
-        for (std::vector<std::string>::const_iterator i = hypotheses[0].begin(); i != hypotheses[0].end(); ++i)
-          spdlog::debug("hypotheses {}", *i);
-        for (std::vector<size_t>::const_iterator i = result.hypotheses[0].begin(); i != result.hypotheses[0].end(); ++i)
-          spdlog::debug("hypotheses {}", *i);
-          */
+
         if (result.has_attention()) {
           // Remove padding and special tokens in attention vectors.
           const size_t offset = size_t(_with_source_bos);

@@ -109,7 +109,6 @@ namespace ctranslate2 {
     options.validate();
     if (source.empty())
       return {};
-
     const TranslationResult empty_result(options.num_hypotheses,
                                          options.return_attention,
                                          options.return_scores);
@@ -118,7 +117,6 @@ namespace ctranslate2 {
     const size_t max_batch_size = options.support_batch_translation() ? 0 : 1;
     // switch  of source and target here
     for (const auto& batch : rebatch_input(source, target_prefix, max_batch_size)) {
-      // spdlog::debug("before sample");
       auto batch_results = _seq2seq_model->sample(*_decoder,
                                                   batch.source,
                                                   batch.target,
@@ -133,7 +131,6 @@ namespace ctranslate2 {
                                                   options.return_attention,
                                                   options.replace_unknowns,
                                                   options.normalize_scores);
-      // spdlog::debug("after sample");
       for (size_t i = 0; i < batch_results.size(); ++i)
         results[batch.example_index[i]] = std::move(batch_results[i]);
     }

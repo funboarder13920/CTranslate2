@@ -12,11 +12,9 @@ namespace ctranslate2 {
     if (sampled_ids.device() != Device::CPU || sampled_scores.device() != Device::CPU)
       throw std::invalid_argument("Sampling outputs should be on the CPU device");
     if (scores.device() == Device::CPU){
-      spdlog::debug("cpu");
       sample(scores, num_samples, sampled_ids, sampled_scores);
     }
     else {
-      spdlog::debug("GPU");
       StorageView sampled_ids_device(DataType::INT32, scores.device());
       StorageView sampled_scores_device(scores.dtype(), scores.device());
       sample(scores, num_samples, sampled_ids_device, sampled_scores_device);

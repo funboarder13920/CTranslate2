@@ -94,7 +94,6 @@ namespace ctranslate2
                                              const Padder *memory_padder) const
     {
       PROFILE("TransformerDecoderLayer");
-      // spdlog::debug("in decoder transformer layer");
       _self_attention(input,
                       input,
                       input_length,
@@ -104,7 +103,6 @@ namespace ctranslate2
                       nullptr,
                       input_padder,
                       input_padder);
-      // spdlog::debug("in decoder transformer layer 1");
       StorageView context(input.dtype(), input.device());
       if (_encoder_attention)
       {
@@ -122,7 +120,6 @@ namespace ctranslate2
       {
         context = std::move(output);
       }
-      // spdlog::debug("in decoder transformer layer 2");
       _ff(context, output);
     }
 
@@ -321,19 +318,10 @@ namespace ctranslate2
                                     StorageView *attention)
     {
       PROFILE("TransformerDecoder");
-      // spdlog::debug("in transformer decoder");
-      spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().size());
-      spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().front());
-      spdlog::debug("in transformer decoder {}", (dim_t)ids.shape().back());
       StorageView layer_in(output_type(), ids.device());
       StorageView layer_out(output_type(), ids.device());
 
-      spdlog::debug("in transformer decoder 2 {}", ids.to(Device::CPU).at<int32_t>({0,0,0}));
-      if ((dim_t)ids.shape().size() == (dim_t)1)
-        spdlog::debug("in transformer decoder 2 {}", ids.to(Device::CPU).at<int32_t>({1}));
       _embeddings(ids, layer_in);
-      spdlog::debug("in transformer decoder layer in {}", layer_in.to(Device::CPU).at<float>({0,0,0}));
-      // spdlog::debug("in transformer decoder 3");
       if (layer_in.rank() == 2)
         layer_in.expand_dims(1);
       if (_position_encoder)
@@ -341,40 +329,29 @@ namespace ctranslate2
           (*_position_encoder)(layer_in);
         else
           (*_position_encoder)(layer_in, std::max(step, dim_t(0)));
-      // spdlog::debug("in transformer after position encoder {}", layer_in.to(Device::CPU).at<float>({0,0,0}));
-      // spdlog::debug("in transformer decoder 4 step {}", step);
-
       const dim_t max_time = layer_in.dim(1);
       const bool allow_padding_removal = Padder::allow_padding_removal(_device, _compute_type);
-      // spdlog::debug("in transformer decoder 5");
       std::unique_ptr<const Padder> input_padder;
       std::unique_ptr<const StorageView> input_lengths_mask;
       if (lengths)
       {
-        // spdlog::debug("in transformer decoder 5.1");
         if (false && allow_padding_removal)
         {
-          // spdlog::debug("in transformer decoder 5.2");
           input_padder = std::make_unique<Padder>(*lengths, max_time);
           input_padder->remove_padding(layer_in);
         }
-        // spdlog::debug("in transformer decoder 5.3");
         input_lengths_mask = std::make_unique<StorageView>(
             layers::MultiHeadAttention::prepare_length_mask(*lengths,
                                                             _num_heads,
                                                             max_time,
                                                             /*mask_future=*/true));
       }
-      // spdlog::debug("in transformer decoder 6");
       StorageView *memory = nullptr;
       std::unique_ptr<const Padder> memory_padder;
       std::unique_ptr<const StorageView> memory_lengths_mask;
-      // spdlog::debug("in transformer decoder 7");
 
-      spdlog::debug(" layer start {}  {}" , layer_in.dim(0), layer_in.dim(1));
       if (_with_encoder_attention)
       {
-        spdlog::debug("in transformer decoder 8");
         const StorageView &memory_lengths = state.at("memory_lengths");
         memory_lengths_mask = std::make_unique<StorageView>(
             layers::MultiHeadAttention::prepare_length_mask(memory_lengths,
@@ -391,7 +368,6 @@ namespace ctranslate2
           }
         }
       }
-      // spdlog::debug("in transformer decoder middle");
       for (size_t l = 0; l < _layers.size(); ++l)
       {
         StorageView *cached_self_attn_keys = nullptr;
@@ -424,61 +400,37 @@ namespace ctranslate2
                       input_padder.get(),
                       memory_padder.get());
         layer_in = std::move(layer_out);
-        //spdlog::debug(" layer shape {} {}  {} {}", l ,  layer_in.shape().size(), layer_in.shape().front(), layer_in.shape().back());
-        //spdlog::debug(" layer shape 1 {}  {}", l , layer_in.dim(1));
-        if (layer_in.dim(0) >1){
-          spdlog::debug(" layer {}  {}", l , layer_in.scalar_at<float>({1, 0,0}));
-        }
       }
-      // spdlog::debug("in transformer decoder middle");
       if (step == 0)
       {
         // The memory is no longer needed as its projections were cached in the first step.
-        //state.erase("memory");
+        state.erase("memory");
       }
-      // spdlog::debug("in transformer decoder middle 2");
       if (logits)
       {
         if (_output_norm)
           (*_output_norm)(layer_in, layer_in);
-        if (layer_in.dim(0) >1){
-          spdlog::debug(" layer _in after output_norm {}", layer_in.scalar_at<float>({1,0,0}));
-        }
         const StorageView* weight = _proj._partial_weight.empty() ? &_proj._weight : &_proj._partial_weight;
         const StorageView* bias = _proj._partial_bias.empty() ? _proj._bias : &_proj._partial_bias;
-        spdlog::debug(" _proj bias {}", bias->to(Device::CPU).at<float>({0}));
-        spdlog::debug(" _proj weight {}", weight->to(Device::CPU).at<float>({0,0}));
-        // spdlog::debug("in transformer decoder middle 3");
         _proj(layer_in, *logits);
-        // spdlog::debug("in transformer decoder middle 4");
         if (step >= 0)
         {
-          spdlog::debug("logits size {} {} {} {}", logits->shape().size(), logits->shape().front(), logits->shape().back(), logits->shape()[1]);
-          spdlog::debug(" logits {}", logits->to(Device::CPU).scalar_at<float>({0,0,0}));
           // logits->view((*logits).data(), logits->shape());
           if (logits->shape()[1] != 1)
           {
             Shape shape = logits->shape();
-            spdlog::debug(" logits {}", logits->to(Device::CPU).scalar_at<float>({0,shape[1] - 1,0}));
             auto logitsCPU = logits->to(Device::CPU);
             StorageView tmpLogits({shape.front(), shape.back()}, logitsCPU.dtype(), logitsCPU.device());
-            // spdlog::debug("before assign -1 {} {} {}", shape.front(), shape[1], shape.back());
-            // spdlog::debug("before assign -1 {}", tmpLogits.at<float>({0, 0}));
             for (dim_t b = 0; b < shape.front(); ++b)
             {
               for (dim_t h = 0; h < shape.back(); ++h)
               {
-                // tmpLogits.at<float>({0, 0}) = 0.f;
                 // TODO : here find a way to extract info from logits
-                // spdlog::debug("before assign -1, {}, {}", b, h);
-                // spdlog::debug("before assign -1, {}", logitsCPU.at<float>({0, 0, 0}));
                 TYPE_DISPATCH(logitsCPU.dtype(),
                               tmpLogits.at<T>({b, h}) = logitsCPU.at<T>({b, shape[1] - 1, h}));
               }
             }
-            // spdlog::debug("before assign");
             *logits = tmpLogits.to(logits->device());
-            // spdlog::debug("after assign");
           }
           else
           {
@@ -487,10 +439,7 @@ namespace ctranslate2
         }
         else if (input_padder)
           input_padder->add_padding(*logits);
-        // spdlog::debug("in transformer decoder middle 5");
       }
-      // spdlog::debug("in transformer decoder end");
     }
-
   }
 }

@@ -256,7 +256,6 @@ namespace ctranslate2
                      const std::vector<std::vector<size_t>> *prefix_ids) const
   {
     PROFILE("beam_search");
-    // spdlog::debug("in beam search {}", start_step);
     const dim_t min_step = start_step + min_length;
     const dim_t max_step = start_step + max_length;
     const Device device = decoder.device();
@@ -273,7 +272,6 @@ namespace ctranslate2
     std::vector<bool> top_beam_finished(batch_size, false);
     std::vector<dim_t> batch_offset(batch_size);
     std::vector<GenerationResult<size_t>> results(batch_size);
-    // spdlog::debug("init beam search");
     for (dim_t i = 0; i < batch_size; ++i)
     {
       batch_offset[i] = i;
@@ -283,11 +281,9 @@ namespace ctranslate2
     // TODO: fix here for GPU and cpu also, more efficient?
     if (!expand_after_first_step)
     {
-      // spdlog::debug("start expand beam search");
       expand_to_beam_size(state, _beam_size);
       expand_to_beam_size(topk_ids, _beam_size);
       TYPE_DISPATCH(dtype, initialize_cum_log_probs<T>(topk_log_probs, batch_size, _beam_size));
-      // spdlog::debug("stop expand beam search");
     }
 
     std::vector<std::vector<bool>> beams_diverged_from_prefix;
@@ -314,7 +310,6 @@ namespace ctranslate2
     for (dim_t step = (start_step + prefix_ids_size); step < max_step; ++step)
     {
       // Compute log probs for the current step.
-      // spdlog::debug("decoder step beam search step: {} {} {}", step, start_step, prefix_ids_size);
       if (step == start_step + prefix_ids_size)
       {
 
@@ -322,17 +317,14 @@ namespace ctranslate2
         std::tie(ids, memory_lengths) = layers::make_sequence_inputs(*prefix_ids,
                                                                      device,
                                                                      (dim_t)prefix_ids->front().size());
-        // expand_to_beam_size(ids, _beam_size);
         decoder(0,
                 ids,
                 memory_lengths,
                 state,
                 &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
                 (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
-        // spdlog::debug("ids check {}", ids.at<int32_t>({0, 1}));
+        expand_to_beam_size(logits, _beam_size);
         prefix_ids = nullptr;
-        // spdlog::debug("ids check {}", ids.at<int32_t>({0, 1}));
-        // spdlog::debug("logits size {} {} {}", logits.shape().size(), logits.shape().front(), logits.shape().back());
       }
       else
       {
@@ -342,14 +334,12 @@ namespace ctranslate2
                 &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
                 (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
       }
-      // spdlog::debug("end decoder step beam search");
       if (bias_towards_prefix)
       {
         if (!biased_decoder)
         {
           biased_decoder = std::make_unique<BiasedDecoder>();
         }
-        // spdlog::debug("biased decoder");
         biased_decoder->decode(_prefix_bias_beta,
                                cur_batch_size,
                                step,
@@ -363,17 +353,12 @@ namespace ctranslate2
       {
         ops::LogSoftMax()(logits, log_probs);
       }
-      spdlog::debug("log probs value {}", log_probs.to(Device::CPU).at<float>({0,0}));
-      // spdlog::debug("end decoder step beam search 2");
       const dim_t vocabulary_size = log_probs.dim(-1);
       const bool is_expanded = (!expand_after_first_step || step >  prefix_ids_size + start_step);
 
       // Multiply by the current beam log probs.
-
-      // spdlog::debug("is expanded {} step {}", is_expanded, step);
       if (is_expanded)
       {
-        spdlog::debug("is expanded {} step {}", is_expanded, step);
         DEVICE_DISPATCH(
             log_probs.device(),
             TYPE_DISPATCH(log_probs.dtype(),
@@ -382,57 +367,32 @@ namespace ctranslate2
                                                              topk_log_probs.size(),
                                                              log_probs.size())));
       }
-      // spdlog::debug("end decoder step beam search 3");
       // Penalize by the length, if enabled.
       float length_penalty_weight = 1.0;
       if (_length_penalty != 0)
       {
-        spdlog::debug("length penalty");
         length_penalty_weight = std::pow((5.0 + static_cast<float>(step + 1)) / 6.0, _length_penalty);
         ops::Mul()(log_probs,
                    StorageView(1.f / length_penalty_weight).to(log_probs.dtype()),
                    log_probs);
       }
-      spdlog::debug("end id {}, unk id {}", end_id, unk_id);
       // Penalize end_id, if configured.
+
       if (step < min_step + prefix_ids_size){
-        // spdlog::debug("penalize token");
         penalize_token(log_probs, end_id);
         penalize_token(log_probs, unk_id);
       }
-      // spdlog::debug("end decoder step beam search 4.1");
 
 
       // TopK candidates.
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({0,0}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({0,576}));
-      spdlog::debug("log probs shape {} {} {}", log_probs.shape().size(), log_probs.dim(0), log_probs.dim(-1));
-      if (log_probs.shape().size() > 1 && log_probs.dim(0) >1){
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({1,576}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({2,576}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({3,576}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({4,576}));
-      spdlog::debug("log probs before sampler {}", log_probs.to(Device::CPU).at<float>({5,576}));
-      }
-
       // Flatten the probs into a list of candidates.
       log_probs.reshape({cur_batch_size, -1});
-      // spdlog::debug("end decoder step beam search 4.2");
-
-      spdlog::debug("beam size {}", _beam_size);
       sampler(log_probs, topk_ids, topk_scores, _beam_size);
-      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,0}));
-      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,1}));
-      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,2}));
-      // spdlog::debug("topk_ids {}", topk_ids.at<int32_t>({0,3}));
-      // spdlog::debug("end decoder step beam search 4.3");
 
       if (use_hard_prefix)
       {
         update_sample_with_prefix(step, topk_ids, topk_scores, *prefix_ids, end_id, unk_id, batch_offset);
-        // spdlog::debug("end decoder step beam search 4.3.1");
       }
-      // spdlog::debug("end decoder step beam search 4.4");
 
       topk_log_probs = topk_scores;
       // Recover the true log probs if length penalty was applied.
@@ -441,7 +401,6 @@ namespace ctranslate2
                    StorageView(length_penalty_weight).to(topk_log_probs.dtype()),
                    topk_log_probs);
 
-      // spdlog::debug("end decoder step beam search 5");
       // Unflatten the ids.
       gather_indices.resize({cur_batch_size * _beam_size});
       std::vector<std::vector<bool>> prev_beams_diverged_from_prefix;
@@ -457,7 +416,6 @@ namespace ctranslate2
           word_id = output_ids_map->at(word_id);
         if (bias_towards_prefix)
         {
-          spdlog::debug("bias toward prefix");
           const auto &prefix = (*prefix_ids)[batch_offset[batch_id]];
           bool diverged = true;
           if (static_cast<size_t>(step) < prefix.size())
@@ -467,20 +425,12 @@ namespace ctranslate2
           beams_diverged_from_prefix[batch_id][i % _beam_size] = diverged;
         }
         topk_ids.at<int32_t>(i) = word_id;
-        spdlog::debug("topk_ids {} {} {} {} {}", word_id, step, flat_id, beam_id, batch_id);
-        spdlog::debug("topk_scores shape {} {} {}",topk_scores.shape().size(), topk_scores.shape().front(),  topk_scores.shape().back());
-        spdlog::debug("topk_scores {}", topk_scores.scalar_at<float>({0, i}));
-        spdlog::debug("logtopk_scores {}", topk_log_probs.scalar_at<float>({0, i}));
-        // spdlog::debug("logits {}", logits.scalar_at<float>({0, 2528}));
-        // spdlog::debug("log_probs {}", log_probs.scalar_at<float>({0, 2528}));
-        spdlog::debug("is expanded {}", is_expanded);
         
         // On the first step, batches are not yet replicated beam_size times.
         gather_indices.at<int32_t>(i) = (is_expanded
                                              ? beam_id + batch_id * _beam_size
                                              : batch_id);
       }
-      // spdlog::debug("end decoder step beam search 6");
       // Append last prediction.
       topk_ids.reshape({cur_batch_size, _beam_size, 1});
       if (alive_seq)
@@ -492,25 +442,15 @@ namespace ctranslate2
       }
       else
       {
-        // spdlog::debug("ids check {}", ids.at<int32_t>({0, 1}));
-        // spdlog::debug("ids check {}", ids.at<int32_t>({1, 1}));
-        // spdlog::debug("ids check {}", topk_ids.at<int32_t>({0, 0}));
-        // spdlog::debug("ids check {}", topk_ids.at<int32_t>({0, 1}));
-        // spdlog::debug("this reshape");
         expand_to_beam_size(ids, _beam_size);
         ids.reshape({cur_batch_size, _beam_size, ids.dim(-1)});
-        // spdlog::debug("end this reshape");
         auto idsDevice = ids.to(topk_ids.device());
         ops::Concat(-1)({&idsDevice, &topk_ids}, alive_seq);
       }
-// spdlog::debug("end this reshape 1");
       topk_log_probs.reshape({cur_batch_size, _beam_size});
-      // spdlog::debug("end this reshape 2");
 
       topk_scores.reshape({cur_batch_size, _beam_size});
-      // spdlog::debug("end this reshape 3");
       topk_ids.reshape({cur_batch_size, _beam_size});
-// spdlog::debug("end this reshape 4");
       if (attention_step_device)
       {
         attention_step.copy_from(attention_step_device.to_float());
@@ -519,7 +459,6 @@ namespace ctranslate2
           expand_to_beam_size(attention_step, _beam_size);
         }
       }
-      // spdlog::debug("end decoder step beam search 7");
       if (_coverage_penalty != 0)
       {
         if (!coverage)
@@ -540,7 +479,6 @@ namespace ctranslate2
         ops::Mul()(penalty, StorageView(_coverage_penalty), penalty);
         ops::Add()(penalty.to(topk_scores.dtype()), topk_scores, topk_scores);
       }
-      // spdlog::debug("end decoder step beam search 8");
       if (return_attention)
       {
         if (!alive_attention)
@@ -564,17 +502,14 @@ namespace ctranslate2
       non_finished_index.reserve(cur_batch_size);
 
       const dim_t max_time = alive_seq.dim(-1);
-      // spdlog::debug("end decoder step beam search 9");
       for (dim_t i = 0; i < cur_batch_size; ++i)
       {
         const dim_t batch_id = batch_offset[i];
         auto &result = results[batch_id];
         for (dim_t k = 0; k < _beam_size; ++k)
         {
-          // spdlog::debug("inside loop {}", k);
           if (topk_ids.at<int32_t>({i, k}) == static_cast<int32_t>(end_id) || step + 1 == max_step)
           {
-            spdlog::debug("inside inner loop {}", k);
             if (k == 0)
               top_beam_finished[i] = true;
             float score = topk_scores.scalar_at<float>({i, k});
@@ -595,7 +530,6 @@ namespace ctranslate2
                 const int32_t id = alive_seq.at<int32_t>({i, k, t});
                 if (id == static_cast<int32_t>(end_id))
                   break;
-                // spdlog::debug("debug id {} {} {} {}", id, i, k, t);
                 hypothesis.push_back(id);
                 if (return_attention)
                 {
@@ -603,7 +537,6 @@ namespace ctranslate2
                   attn.emplace_back(attn_vec, attn_vec + alive_attention.dim(-1));
                 }
               }
-            // spdlog::debug("debug id score {}", score);
               result.scores.emplace_back(score);
               result.hypotheses.emplace_back(std::move(hypothesis));
               if (return_attention)
@@ -611,19 +544,16 @@ namespace ctranslate2
             }
           }
         }
-        // spdlog::debug("end decoder step beam search 10");
         const bool is_finished = (_early_exit
                                       ? top_beam_finished[i] && result.num_hypotheses() >= num_hypotheses
                                       : result.num_hypotheses() >= static_cast<size_t>(_beam_size));
 
         if (is_finished)
         {
-          // spdlog::debug("sort hypothesis");
           sort_hypotheses(result, num_hypotheses, return_scores);
         }
         else
         {
-          // spdlog::debug("not finished");
           non_finished_index.emplace_back(i);
         }
       }
@@ -633,7 +563,6 @@ namespace ctranslate2
       // If all remaining sentences are finished, no need to go further.
       if (next_batch_size == 0)
       {
-        // spdlog::debug("check expand {}", is_expanded);
         if (!is_expanded)
         {
           // We should ensure that states are replicated before exiting this function.
@@ -641,20 +570,15 @@ namespace ctranslate2
         }
         break;
       }
-      // spdlog::debug("end decoder step beam search 11");
       // If some sentences finished on this step, ignore them for the next step.
       if (next_batch_size != cur_batch_size)
       {
         cur_batch_size = next_batch_size;
-        // spdlog::debug("end decoder step beam search 11.01");
         batch_offset = index_vector(batch_offset, non_finished_index);
-        // spdlog::debug("end decoder step beam search 11.02");
         top_beam_finished = index_vector(top_beam_finished, non_finished_index);
-        // spdlog::debug("end decoder step beam search 11.03");
         if (bias_towards_prefix)
           beams_diverged_from_prefix = index_vector(beams_diverged_from_prefix, non_finished_index);
-        // spdlog::debug("end decoder step beam search 11.04");
-        // spdlog::debug("end decoder step beam search 11.1");
+
         StorageView keep_batches({cur_batch_size}, non_finished_index);
         gather(topk_ids, keep_batches);
         gather(topk_log_probs, keep_batches);
@@ -666,7 +590,6 @@ namespace ctranslate2
         // finished batches from the reorder indices and then reorder. The motivation for this
         // difference is to enable the fast in place gather on CPU for state elements that should
         // not be reordered (see Decoder::gather_state and Gather::operator()).
-        // spdlog::debug("end decoder step beam search 11.2");
         if (device == Device::CPU)
         {
           decoder.gather_state(state, gather_indices);
@@ -678,7 +601,6 @@ namespace ctranslate2
           gather_batch(gather_indices, keep_batches, _beam_size);
           decoder.gather_state(state, gather_indices.to(device));
         }
-        // spdlog::debug("end decoder step beam search 11.3");
         if (_coverage_penalty != 0)
         {
           coverage.reshape({-1, _beam_size, coverage.dim(1), coverage.dim(2)});
@@ -688,19 +610,11 @@ namespace ctranslate2
       }
       else
       {
-        // spdlog::debug("end decoder step beam search 12.1");
         decoder.gather_state(state, gather_indices.to(device));
       }
-      // spdlog::debug("end decoder step beam search 12");
       topk_ids.reshape({cur_batch_size * _beam_size});
-      spdlog::debug("topk_ids end {}", topk_ids.to(Device::CPU).at<int32_t>({0}));
-      spdlog::debug("topk_ids end {}", topk_ids.to(Device::CPU).at<int32_t>({1}));
-      spdlog::debug("topk_ids end {}", topk_ids.to(Device::CPU).at<int32_t>({2}));
-      // spdlog::debug("end decoder step beam search 12.1");
       topk_log_probs.reshape({cur_batch_size * _beam_size});
-      // spdlog::debug("end decoder step beam search 12.2");
       alive_seq.reshape({cur_batch_size * _beam_size, alive_seq.dim(-1)});
-      // spdlog::debug("end decoder step beam search 12.3");
       if (return_attention)
         alive_attention.reshape({cur_batch_size * _beam_size,
                                  alive_attention.dim(2),
@@ -723,7 +637,6 @@ namespace ctranslate2
         }
       }
     }
-    // spdlog::debug("end decoder step beam search 13");
     return results;
   }
 
@@ -865,12 +778,10 @@ namespace ctranslate2
     StorageView attention(device);
     if (prefix_attention)
       prefix_attention->reserve(prefix_size);
-    // spdlog::debug("prefix attention ?");
 
     input.at<int32_t>(0) = start_id;
     for (size_t i = 0; i < prefix_size; ++i)
     {
-      // spdlog::debug("before decoder initialize");
       decoder(i,
               input.to(device),
               state,
@@ -879,7 +790,6 @@ namespace ctranslate2
       if (prefix_attention)
         prefix_attention->emplace_back(attention.to_vector<float>());
 
-      // spdlog::debug("after decoder initialize + emplace");
       input.at<int32_t>(0) = prefix_ids[i];
     }
   }
@@ -904,8 +814,6 @@ namespace ctranslate2
   {
     const size_t batch_size = start_ids.size();
     dim_t start_step = 0;
-    // spdlog::debug("in decode");
-    // spdlog::debug("max length {}", max_length);
     std::vector<GenerationResult<size_t>> expansion_results;
     if (return_alternatives)
     {
@@ -932,11 +840,9 @@ namespace ctranslate2
       // In this translation mode, we first expand the next "num_hypotheses" candidate words
       // before running the full decoding on each prefix. This is to ensure that we get unique
       // alternatives at this decoding position.
-      // spdlog::debug("before beam search");
       expansion_results = BeamSearch(num_hypotheses).search(decoder, state, BestSampler(), start_ids, end_id, unk_id, start_step,
                                                             /*max_length=*/1,
                                                             /*min_length=*/1, output_ids_map, normalize_scores, return_scores, return_attention, num_hypotheses);
-      // spdlog::debug("after beam search");
       start_ids.resize(batch_size * num_hypotheses);
       for (size_t b = 0; b < batch_size; ++b)
       {
@@ -960,20 +866,13 @@ namespace ctranslate2
                                          prefix_attention[b].end());
             }
           }
-          //// spdlog::debug("res hypothesis {}", result.hypotheses[0]);
         }
       }
-      // spdlog::debug("prefix_ids");
-      // spdlog::debug("prefix_ids {}", (dim_t)prefix_ids->front().size());
       start_step += 1;
       // add prefix size ?
       max_length = std::max(max_length - 1 + (dim_t)(prefix_ids->front().size()), dim_t(0));
       min_length = std::max(min_length - 1 + (dim_t)(prefix_ids->front().size()), dim_t(0));
     }
-    // spdlog::debug("before beam search, outside if");
-
-    // spdlog::debug("prefix_ids");
-    // spdlog::debug("prefix_ids {}", (dim_t)prefix_ids->front().size());
 
     max_length = std::max(max_length + (dim_t)(prefix_ids->front().size()), dim_t(0));
     min_length = std::max(min_length + (dim_t)(prefix_ids->front().size()), dim_t(0));
@@ -992,7 +891,6 @@ namespace ctranslate2
                                           return_attention,
                                           return_alternatives ? 1 : num_hypotheses,
                                           return_alternatives ? nullptr : prefix_ids);
-    // spdlog::debug("after beam search, outside if");
 
     if (return_alternatives)
     {

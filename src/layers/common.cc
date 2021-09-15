@@ -22,7 +22,6 @@ namespace ctranslate2 {
       for (dim_t i = 0; i < batch_size; ++i) {
         const dim_t length = ids[i].size();
         lengths.at<int32_t>(i) = length;
-        // spdlog::debug("length in make {}", length);
         max_length = std::max(max_length, length);
       }
 
@@ -47,11 +46,9 @@ namespace ctranslate2 {
       , _output_type(get_default_float_type(model.effective_compute_type()))
       , _qscale(model.get_variable_if_exists(scope + "/weight_scale"))
     {
-      // spdlog::debug("embedding weights {}",model.get_variable(scope + "/weight").to(Device::CPU).at<float>({0,0}));
       if (model.get_flag_with_default(scope + "/multiply_by_sqrt_depth", true)) {
         const StorageView scale(std::sqrt(static_cast<float>(_embeddings.dim(1))));
         _scale = std::make_unique<StorageView>(scale.to(_output_type));
-        // spdlog::debug("scale {}", std::sqrt(static_cast<float>(_embeddings.dim(1))));
       }
     }
 
@@ -78,14 +75,10 @@ namespace ctranslate2 {
           ops::Dequantize()(gathered, scale, output);
         }
       } else {
-        // spdlog::debug("gather op");
         _gather_op(_embeddings, ids, output);
-        // spdlog::debug("_embeddings {}", _embeddings.to(Device::CPU).at<float>({0}));
       }
-      spdlog::debug("embeddings before scale {}", output.to(Device::CPU).at<float>({0,0,0}));
       if (_scale)
         ops::Mul()(output, *_scale, output);
-      spdlog::debug("embeddings after scale {}", output.to(Device::CPU).at<float>({0,0,0}));
     }
 
 
@@ -95,21 +88,18 @@ namespace ctranslate2 {
       const dim_t max_time = std::max(time, index + 1);
       const StorageView& encodings = get_position_encoding(max_time);
       const dim_t num_encodings = encodings.dim(0);
-      spdlog::debug("before position encoding {}", input.to(Device::CPU).at<float>({0,0,0}));
 
       if (max_time > num_encodings)
         std::runtime_error("No position encodings are defined for positions >= "
                            + std::to_string(num_encodings)
                            + ", but got position "
                            + std::to_string(max_time - 1));
-      spdlog::debug("position encoding {} {} {} {}",  index * depth, index, depth, input.shape().back());
       DEVICE_DISPATCH(input.device(),
                       TYPE_DISPATCH(input.dtype(),
                                     primitives<D>::add_batch_broadcast(encodings.data<T>() + index * depth,
                                                                        input.data<T>(),
                                                                        time * depth,
                                                                        input.size())));
-      spdlog::debug("position encoding {}", input.to(Device::CPU).at<float>({0,0,0}));
     }
 
     void PositionEncoder::operator()(const StorageView& input, StorageView& output, dim_t index) {
@@ -254,16 +244,13 @@ namespace ctranslate2 {
 
     void Dense::operator()(const StorageView& input, StorageView& output) const {
       PROFILE("Dense");
-      // spdlog::debug("in dense");
       const StorageView* qscale = _partial_qscale.empty() ? _qscale : &_partial_qscale;
       const StorageView* weight = _partial_weight.empty() ? &_weight : &_partial_weight;
       const StorageView* bias = _partial_bias.empty() ? _bias : &_partial_bias;
       const StorageView* compensation = (_partial_u8_shift_compensation.empty()
                                          ? _u8_shift_compensation
                                          : &_partial_u8_shift_compensation);
-                                         // spdlog::debug("in dense 1");
       if (_quantized_gemm) {
-        // spdlog::debug("in dense 2");
         const auto device = input.device();
         StorageView qinput(_weight.dtype(), device);
         StorageView qinput_scale(_qscale->dtype(), device);
@@ -277,11 +264,8 @@ namespace ctranslate2 {
                        /*trans_b=*/true,
                        output,
                        bias);
-                       // spdlog::debug("in dense 2.1");
       } else {
-        // spdlog::debug("in dense 3");
         _gemm_op(input, *weight, output, nullptr, bias);
-        // spdlog::debug("in dense 3.1");
       }
     }
 

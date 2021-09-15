@@ -180,15 +180,12 @@ namespace ctranslate2 {
       StorageView split_values(dtype, device);
 
       const StorageView* q = &queries;
-      // spdlog::debug("inp {}", q->to(Device::CPU).at<float>({0,0,0}));
       if (_pre_norm) {
         _layer_norm(queries, queries_proj);
         q = &queries_proj;
       }
-      // spdlog::debug("inp norm {}",  q->to(Device::CPU).at<float>({0,0,0}));
 
       _linear[0](*q, fused_proj);
-// spdlog::debug("in multi attention layer 2");
       if (!_self_attention) {
         if (queries_padder)
           queries_padder->add_padding(fused_proj);
@@ -217,11 +214,9 @@ namespace ctranslate2 {
         }
 
       } else {
-        // spdlog::debug("self attention");
         ops::Split(-1)(fused_proj, queries_proj, keys_proj, values_proj);
         if (queries_padder) {
           // From now on the time dimension is required.
-          spdlog::debug("queries padder ?");
           queries_padder->add_padding(queries_proj);
           queries_padder->add_padding(keys_proj);
           queries_padder->add_padding(values_proj);
@@ -230,11 +225,9 @@ namespace ctranslate2 {
         split_heads(keys_proj, split_keys);
         split_heads(values_proj, split_values);
         if (cached_keys != nullptr) {
-          // spdlog::debug("cached_keys not nullptr");
           if (cached_keys->empty()) {
            *cached_keys = std::move(split_keys);
             *cached_values = std::move(split_values);
-            // spdlog::debug("cached_keys shape empty {} {} {} {}", cached_keys->shape()[1],cached_keys->shape()[2], cached_keys->shape().front(), cached_keys->shape().back());
           } else {
             StorageView& tmp = keys_proj;  // Reuse storage.#include <spdlog/spdlog.h>
 
@@ -242,13 +235,11 @@ namespace ctranslate2 {
             ops::Concat(2)({&tmp, &split_keys}, *cached_keys);
             tmp = std::move(*cached_values);
             ops::Concat(2)({&tmp, &split_values}, *cached_values);
-            // spdlog::debug("cached_keys shape {} {} {} {}", cached_keys->shape()[1], cached_keys->shape()[2],  cached_keys->shape().front(), cached_keys->shape().back());
           }
           split_keys.shallow_copy(*cached_keys);
           split_values.shallow_copy(*cached_values);
         }
       }
-// spdlog::debug("in multi attention layer 3");
       StorageView& context = queries_proj;  // Reuse storage.
       dot_product_attention(split_queries,
                             split_keys,
@@ -264,20 +255,15 @@ namespace ctranslate2 {
 
       StorageView& combined = values_proj;  // Reuse storage.
       combine_heads(context, combined);
-// spdlog::debug("in multi attention layer 4");
       if (queries_padder) {
         // The time dimension is no longer needed.
         queries_padder->remove_padding(combined);
       }
-// spdlog::debug("in multi attention layer 4.1 {} {}", combined.size(), output.size());
       _linear.back()(combined, output);
-      // spdlog::debug("in multi attention layer 4.1.1");
       ops::Add()(queries, output, output);
-      // spdlog::debug("in multi attention layer 4.2");
       if (!_pre_norm) {
         _layer_norm(output, output);
       }
-      // spdlog::debug("in multi attention layer 5");
     }
 
     void MultiHeadAttention::split_heads(StorageView& x, StorageView& y) const {
