@@ -91,6 +91,37 @@ get_translators_location(const std::vector<ctranslate2::Translator>& translators
 }
 
 
+template <typename T>
+class AsyncResult {
+public:
+  AsyncResult(std::future<T> future)
+    : _future(std::move(future))
+  {
+  }
+
+  const T& result() {
+    if (!_done) {
+      {
+        py::gil_scoped_release release;
+        _result = _future.get();
+      }
+      _done = true;  // Assign done attribute while the GIL is held.
+    }
+    return _result;
+  }
+
+  bool done() {
+    constexpr std::chrono::seconds zero_sec(0);
+    return _done || _future.wait_for(zero_sec) == std::future_status::ready;
+  }
+
+private:
+  std::future<T> _future;
+  T _result;
+  bool _done = false;
+};
+
+
 class TranslatorWrapper
 {
 public:
@@ -222,82 +253,75 @@ public:
     return stats;
   }
 
-  py::list translate_batch(const BatchTokens& source,
-                           const BatchTokensOptional& target_prefix,
-                           size_t max_batch_size,
-                           const std::string& batch_type_str,
-                           size_t beam_size,
-                           size_t num_hypotheses,
-                           float length_penalty,
-                           float coverage_penalty,
-                           float prefix_bias_beta,
-                           bool allow_early_exit,
-                           size_t max_decoding_length,
-                           size_t min_decoding_length,
-                           bool use_vmap,
-                           bool normalize_scores,
-                           bool return_scores,
-                           bool return_attention,
-                           bool return_alternatives,
-                           size_t sampling_topk,
-                           float sampling_temperature,
-                           bool replace_unknowns) {
+  std::variant<std::vector<ctranslate2::TranslationResult>,
+               std::vector<AsyncResult<ctranslate2::TranslationResult>>>
+  translate_batch(const BatchTokens& source,
+                  const BatchTokensOptional& target_prefix,
+                  size_t max_batch_size,
+                  const std::string& batch_type_str,
+                  bool asynchronous,
+                  size_t beam_size,
+                  size_t num_hypotheses,
+                  float length_penalty,
+                  float coverage_penalty,
+                  float prefix_bias_beta,
+                  bool allow_early_exit,
+                  size_t max_decoding_length,
+                  size_t min_decoding_length,
+                  bool use_vmap,
+                  bool normalize_scores,
+                  bool return_scores,
+                  bool return_attention,
+                  bool return_alternatives,
+                  size_t sampling_topk,
+                  float sampling_temperature,
+                  bool replace_unknowns) {
     if (source.empty())
-      return py::list();
+      return {};
 
-    std::vector<ctranslate2::TranslationResult> results;
+    py::gil_scoped_release release;
 
-    {
-      py::gil_scoped_release release;
+    std::shared_lock lock(_mutex);
+    assert_model_is_ready();
 
-      std::shared_lock lock(_mutex);
-      assert_model_is_ready();
+    ctranslate2::BatchType batch_type = ctranslate2::str_to_batch_type(batch_type_str);
+    ctranslate2::TranslationOptions options;
+    options.beam_size = beam_size;
+    options.length_penalty = length_penalty;
+    options.coverage_penalty = coverage_penalty;
+    options.prefix_bias_beta = prefix_bias_beta;
+    options.allow_early_exit = allow_early_exit;
+    options.sampling_topk = sampling_topk;
+    options.sampling_temperature = sampling_temperature;
+    options.max_decoding_length = max_decoding_length;
+    options.min_decoding_length = min_decoding_length;
+    options.num_hypotheses = num_hypotheses;
+    options.use_vmap = use_vmap;
+    options.normalize_scores = normalize_scores;
+    options.return_scores = return_scores;
+    options.return_attention = return_attention;
+    options.return_alternatives = return_alternatives;
+    options.replace_unknowns = replace_unknowns;
 
-      ctranslate2::BatchType batch_type = ctranslate2::str_to_batch_type(batch_type_str);
-      ctranslate2::TranslationOptions options;
-      options.beam_size = beam_size;
-      options.length_penalty = length_penalty;
-      options.coverage_penalty = coverage_penalty;
-      options.prefix_bias_beta = prefix_bias_beta;
-      options.allow_early_exit = allow_early_exit;
-      options.sampling_topk = sampling_topk;
-      options.sampling_temperature = sampling_temperature;
-      options.max_decoding_length = max_decoding_length;
-      options.min_decoding_length = min_decoding_length;
-      options.num_hypotheses = num_hypotheses;
-      options.use_vmap = use_vmap;
-      options.normalize_scores = normalize_scores;
-      options.return_scores = return_scores;
-      options.return_attention = return_attention;
-      options.return_alternatives = return_alternatives;
-      options.replace_unknowns = replace_unknowns;
+    auto futures = _translator_pool.translate_batch_async(source,
+                                                          finalize_optional_batch(target_prefix),
+                                                          options,
+                                                          max_batch_size,
+                                                          batch_type);
 
-      results = _translator_pool.translate_batch(source,
-                                                 finalize_optional_batch(target_prefix),
-                                                 options,
-                                                 max_batch_size,
-                                                 batch_type);
+    if (asynchronous) {
+      std::vector<AsyncResult<ctranslate2::TranslationResult>> results;
+      results.reserve(futures.size());
+      for (auto& future : futures)
+        results.emplace_back(std::move(future));
+      return std::move(results);
+    } else {
+      std::vector<ctranslate2::TranslationResult> results;
+      results.reserve(futures.size());
+      for (auto& future : futures)
+        results.emplace_back(future.get());
+      return std::move(results);
     }
-
-    py::list py_results(results.size());
-    for (size_t b = 0; b < results.size(); ++b) {
-      const auto& result = results[b];
-      py::list batch(result.num_hypotheses());
-      for (size_t i = 0; i < result.num_hypotheses(); ++i) {
-        py::dict hyp;
-        hyp["tokens"] = result.hypotheses[i];
-        if (result.has_scores()) {
-          hyp["score"] = result.scores[i];
-        }
-        if (result.has_attention()) {
-          hyp["attention"] = result.attention[i];
-        }
-        batch[i] = hyp;
-      }
-      py_results[b] = batch;
-    }
-
-    return py_results;
   }
 
   std::vector<std::vector<float>>
@@ -470,6 +494,14 @@ static py::set get_supported_compute_types(const std::string& device_str, const 
   return compute_types;
 }
 
+template <typename T>
+static void declare_async_wrapper(py::module& m, const char* name) {
+  py::class_<AsyncResult<T>>(m, name)
+    .def("result", &AsyncResult<T>::result)
+    .def("done", &AsyncResult<T>::done)
+    ;
+}
+
 PYBIND11_MODULE(translator, m)
 {
   m.def("contains_model", &ctranslate2::models::contains_model, py::arg("path"));
@@ -477,6 +509,34 @@ PYBIND11_MODULE(translator, m)
   m.def("get_supported_compute_types", &get_supported_compute_types,
         py::arg("device"),
         py::arg("device_index")=0);
+
+  py::class_<ctranslate2::TranslationResult>(m, "TranslationResult")
+    .def_readonly("hypotheses", &ctranslate2::TranslationResult::hypotheses)
+    .def_readonly("scores", &ctranslate2::TranslationResult::scores)
+    .def_readonly("attention", &ctranslate2::TranslationResult::attention)
+    .def("__repr__", [](const ctranslate2::TranslationResult& result) {
+      return "TranslationResult(hypotheses=" + std::string(py::repr(py::cast(result.hypotheses)))
+        + ", scores=" + std::string(py::repr(py::cast(result.scores)))
+        + ", attention=" + std::string(py::repr(py::cast(result.attention)))
+        + ")";
+    })
+
+    // Backward compatibility with using translate_batch output as a list of dicts.
+    .def("__len__", &ctranslate2::TranslationResult::num_hypotheses)
+    .def("__getitem__", [](const ctranslate2::TranslationResult& result, size_t i) {
+      if (i >= result.num_hypotheses())
+        throw std::out_of_range("list index out of range");
+      py::dict hypothesis;
+      hypothesis["tokens"] = result.hypotheses[i];
+      if (result.has_scores())
+        hypothesis["score"] = result.scores[i];
+      if (result.has_attention())
+        hypothesis["attention"] = result.attention[i];
+      return hypothesis;
+    })
+    ;
+
+  declare_async_wrapper<ctranslate2::TranslationResult>(m, "AsyncTranslationResult");
 
   py::class_<TranslatorWrapper>(m, "Translator")
     .def(py::init<const std::string&, const std::string&, const std::variant<int, std::vector<int>>&, const StringOrMap&, size_t, size_t>(),
@@ -497,6 +557,7 @@ PYBIND11_MODULE(translator, m)
          py::kw_only(),
          py::arg("max_batch_size")=0,
          py::arg("batch_type")="examples",
+         py::arg("asynchronous")=false,
          py::arg("beam_size")=2,
          py::arg("num_hypotheses")=1,
          py::arg("length_penalty")=0,
@@ -565,6 +626,12 @@ PYBIND11_MODULE(translator, m)
     .def_readonly("num_tokens", &ctranslate2::TranslationStats::num_tokens)
     .def_readonly("num_examples", &ctranslate2::TranslationStats::num_examples)
     .def_readonly("total_time_in_ms", &ctranslate2::TranslationStats::total_time_in_ms)
+    .def("__repr__", [](const ctranslate2::TranslationStats& stats) {
+      return "TranslationStats(num_tokens=" + std::string(py::repr(py::cast(stats.num_tokens)))
+        + ", num_examples=" + std::string(py::repr(py::cast(stats.num_examples)))
+        + ", total_time_in_ms=" + std::string(py::repr(py::cast(stats.total_time_in_ms)))
+        + ")";
+    })
 
     // Backward compatibility with using translate_file output as a tuple.
     .def("__getitem__", [](const ctranslate2::TranslationStats& stats, size_t index) {

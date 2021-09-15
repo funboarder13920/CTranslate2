@@ -11,6 +11,7 @@ option(WITH_MKL "Compile with Intel MKL backend" ON)
 option(WITH_DNNL "Compile with DNNL backend" OFF)
 option(WITH_ACCELERATE "Compile with Accelerate backend" OFF)
 option(WITH_OPENBLAS "Compile with OpenBLAS backend" OFF)
+option(WITH_RUY "Compile with Ruy backend" OFF)
 option(WITH_CUDA "Compile with CUDA backend" OFF)
 option(CUDA_DYNAMIC_LOADING "Dynamically load CUDA libraries at runtime" OFF)
 option(ENABLE_CPU_DISPATCH "Compile CPU kernels for multiple ISA and dispatch at runtime" ON)
@@ -90,6 +91,7 @@ set(SOURCES
   src/layers/decoder.cc
   src/layers/transformer.cc
   src/models/model.cc
+  src/models/model_reader.cc
   src/models/sequence_to_sequence.cc
   src/models/transformer.cc
   src/ops/activation.cc
@@ -120,6 +122,7 @@ set(SOURCES
   src/ops/split.cc
   src/ops/sub.cc
   src/ops/tile.cc
+  src/ops/tile_cpu.cc
   src/ops/topk.cc
   src/ops/topk_cpu.cc
   src/ops/transpose.cc
@@ -325,6 +328,14 @@ if (WITH_OPENBLAS)
   list(APPEND LIBRARIES ${BLAS_LIBRARIES})
 endif()
 
+if (WITH_RUY)
+  add_definitions(-DCT2_WITH_RUY)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_subdirectory(third_party/ruy EXCLUDE_FROM_ALL)
+  unset(CMAKE_POSITION_INDEPENDENT_CODE)
+  list(APPEND LIBRARIES ruy)
+endif()
+
 if (WITH_CUDA)
   find_package(CUDA 10.0 REQUIRED)
   add_definitions(-DCT2_WITH_CUDA)
@@ -379,6 +390,7 @@ if (WITH_CUDA)
     src/ops/layer_norm_gpu.cu
     src/ops/multinomial_gpu.cu
     src/ops/softmax_gpu.cu
+    src/ops/tile_gpu.cu
     src/ops/topk_gpu.cu
     src/ops/quantize_gpu.cu
     )

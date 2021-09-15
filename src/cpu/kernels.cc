@@ -1,5 +1,7 @@
 #include "cpu/kernels.h"
 
+#include <limits>
+
 #if defined(__AVX2__)
 #  define TARGET_ISA CpuIsa::AVX2
 #  include "cpu/vec_avx.h"
@@ -96,21 +98,21 @@ namespace ctranslate2 {
 
       T values[Vec<T, ISA>::width];
       Vec<T, ISA>::store(vec_accu, values);
-      const auto accu =  vectorized_map_reduce_all<ISA>(values,
-                                                        Vec<T, ISA>::width,
-                                                        init,
-                                                        identity(),
-                                                        vec_reduce_func,
-                                                        identity(),
-                                                        scalar_reduce_func);
+      const auto accu = vectorized_map_reduce_all<ISA>(values,
+                                                       Vec<T, ISA>::width,
+                                                       init,
+                                                       identity(),
+                                                       vec_reduce_func,
+                                                       identity(),
+                                                       scalar_reduce_func);
 
-      return  vectorized_map_reduce_all<ISA>(x + size,
-                                             remaining,
-                                             accu,
-                                             vec_map_func,
-                                             vec_reduce_func,
-                                             scalar_map_func,
-                                             scalar_reduce_func);
+      return vectorized_map_reduce_all<ISA>(x + size,
+                                            remaining,
+                                            accu,
+                                            vec_map_func,
+                                            vec_reduce_func,
+                                            scalar_map_func,
+                                            scalar_reduce_func);
     }
 
     template <CpuIsa ISA, typename T, typename VecReduceFunc, typename ScalarReduceFunc>
@@ -226,7 +228,7 @@ namespace ctranslate2 {
     T reduce_max(const T* x, dim_t size) {
       return vectorized_reduce_all<ISA>(x,
                                         size,
-                                        x[0],
+                                        std::numeric_limits<T>::lowest(),
                                         Vec<T, ISA>::max,
                                         Vec<T>::max);
     }

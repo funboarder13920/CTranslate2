@@ -21,6 +21,10 @@
 #  include <cblas.h>
 #endif
 
+#ifdef CT2_WITH_RUY
+#  include <ruy/ruy.h>
+#endif
+
 #include "ctranslate2/allocator.h"
 #include "cpu/backend.h"
 #include "cpu/kernels.h"
@@ -46,18 +50,10 @@ namespace ctranslate2 {
   template<>
   template <typename T>
   void primitives<Device::CPU>::strided_fill(T* x, T a, dim_t inc_x, dim_t size) {
-    for (dim_t i = 0, j = 0; i < size; i++, j += inc_x) {
-      x[j] = a;
+    for (dim_t i = 0; i < size; i++, x += inc_x) {
+      *x = a;
     }
   }
-
-#ifdef CT2_WITH_MKL
-  template<>
-  template<>
-  void primitives<Device::CPU>::strided_fill(float* x, float a, dim_t inc_x, dim_t size) {
-    cblas_scopy(size, &a, /*incx=*/0, x, inc_x);
-  }
-#endif
 
   template<>
   template <typename T>
@@ -292,12 +288,10 @@ namespace ctranslate2 {
       return;
     }
 #endif
-    static const float pi = std::acos(-1.f);
-    static const float scale = std::sqrt(2.f / pi);
     cpu::parallel_unary_transform(
       x, y, size, /*work_size=*/14,
       [](float v) {
-        return 0.5f * v * (1.f + std::tanh(scale * (v + 0.044715f * std::pow(v, 3.f))));
+        return 0.5f * v * (1.f + std::tanh(0.7978845608028654f * (v + 0.044715f * std::pow(v, 3.f))));
       });
   }
 
@@ -810,6 +804,57 @@ namespace ctranslate2 {
                           beta,
                           c, ldc, &co);
       }
+      break;
+    }
+#endif
+
+#ifdef CT2_WITH_RUY
+    case cpu::GemmBackend::RUY: {
+      ruy::Context *context = cpu::get_ruy_context();
+
+      const ruy::Order order_a = transpose_a ? ruy::Order::kColMajor : ruy::Order::kRowMajor;
+      const ruy::Order order_b = transpose_b ? ruy::Order::kColMajor : ruy::Order::kRowMajor;
+
+      ruy::Matrix<std::int8_t> lhs;
+      ruy::MakeSimpleLayout(m, k, order_a, lhs.mutable_layout());
+      lhs.set_data(a);
+
+      ruy::Matrix<std::int8_t> rhs;
+      ruy::MakeSimpleLayout(k, n, order_b, rhs.mutable_layout());
+      rhs.set_data(b);
+
+      ruy::Matrix<std::int32_t> dst;
+      ruy::MakeSimpleLayout(m, n, ruy::Order::kRowMajor, dst.mutable_layout());
+      dst.set_data(c);
+
+      int32_t *tmp_c = nullptr;
+
+      if (beta != 0.0f) {
+        tmp_c = static_cast<int32_t*>(allocator.allocate(m * n * sizeof (int32_t)));
+        copy(c, tmp_c, m * n);
+      }
+
+      ruy::MulParams<std::int32_t, std::int32_t> mul_params;
+      ruy::Mul(lhs, rhs, mul_params, context, &dst);
+
+      if (alpha != 1.0f) {
+        #pragma omp parallel for
+        for (dim_t i = 0; i < m * n; ++i) {
+          c[i] = static_cast<int32_t>(alpha * c[i]);
+        }
+      }
+
+      if (beta != 0.0f) {
+        #pragma omp parallel for
+        for (dim_t i = 0; i < m * n; ++i) {
+          c[i] += static_cast<int32_t>(beta * tmp_c[i]);
+        }
+      }
+
+      if (tmp_c) {
+        allocator.free(tmp_c);
+      }
+
       break;
     }
 #endif

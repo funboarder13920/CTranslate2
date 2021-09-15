@@ -16,7 +16,15 @@ converter = ctranslate2.converters.OpenNMTTFConverter(
 )
 
 converter = ctranslate2.converters.OpenNMTPyConverter(
-    model_path: str,         # Path to the OpenNMT-py model.
+    model_path: str,         # Path to the OpenNMT-py model (.pt file).
+)
+
+converter = ctranslate2.converters.FairseqConverter(
+    model_path: str,              # Path to the Fairseq model (.pt file).
+    data_dir: str,                # Path to the Fairseq data directory.
+    source_lang: str = None,      # Source language (may be required if not declared in the model).
+    target_lang: str = None,      # Target language (may be required if not declared in the model).
+    fixed_dictionary: str = None, # Path to the fixed dictionary for multilingual models.
 )
 
 output_dir = converter.convert(
@@ -53,16 +61,19 @@ translator.device_index        # List of device IDs where this translator is run
 translator.num_translators     # Number of translators backing this instance.
 translator.num_queued_batches  # Number of batches waiting to be translated.
 
-# output is a 2D list [batch x num_hypotheses] containing dict with keys:
-# * "tokens"
-# * "score" (if return_scores is set to True)
-# * "attention" (if return_attention is set to True)
-output = translator.translate_batch(
+# results is a list of TranslationResult instances that have the following properties:
+# * hypotheses
+# * scores (empty if return_scores is set to False)
+# * attention (empty if return_attention is set to False)
+# With asynchronous=True, the function returns a list of AsyncTranslationResult instances.
+# The actual TranslationResult instance can be retrieved by calling .result() on the async wrapper.
+results = translator.translate_batch(
     source: list,                      # A list of list of string.
     target_prefix: list = None,        # An optional list of list of string.
     *,
     max_batch_size: int = 0,           # Maximum batch size to run the model on.
     batch_type: str = "examples",      # Whether max_batch_size is the number of examples or tokens.
+    asynchronous: bool = False,        # Run the translation asynchronously.
     beam_size: int = 2,                # Beam size (set 1 to run greedy search).
     num_hypotheses: int = 1,           # Number of hypotheses to return (should be <= beam_size
                                        # unless return_alternatives is set).
@@ -82,7 +93,7 @@ output = translator.translate_batch(
     replace_unknowns: bool = False,    # Replace unknown target tokens by the source token with the highest attention.
 )
 
-# stats is an object with the following properties:
+# stats is a TranslationStats instance that has the following properties:
 # * num_tokens: the number of generated target tokens
 # * num_examples: the number of translated examples
 # * total_time_in_ms: the total translation time in milliseconds
@@ -168,21 +179,17 @@ Parallel translations are enabled in the following cases:
 
 * When calling `translate_file` (or `score_file`).
 * When calling `translate_batch` (or `score_batch`) and setting `max_batch_size`: the input will be split according to `max_batch_size` and each sub-batch will be translated in parallel.
-* When calling `translate_batch` (or `score_batch`) from multiple Python threads. If you are using a multithreaded HTTP server, this may already be the case. For other cases, you could use a [`ThreadPoolExecutor`](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.ThreadPoolExecutor) to submit multiple concurrent translations:
+* When calling `translate_batch` (or `score_batch`) from multiple Python threads: parallelization with Python threads is made possible because the `Translator` methods release the [Python GIL](https://wiki.python.org/moin/GlobalInterpreterLock).
+* When calling `translate_batch` multiple times with `asynchronous=True`:
 
 ```python
-import concurrent.futures
+async_results = []
+for batch in batch_generator():
+    async_results.extend(translator.translate_batch(batch, asynchronous=True))
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=inter_threads) as executor:
-    futures = [
-        executor.submit(translator.translate_batch, batch)
-        for batch in batch_generator()
-    ]
-    for future in futures:
-        translation_result = future.result()
+for async_result in async_results:
+    print(async_result.result())  # This method blocks until the result is available.
 ```
-
-Note: parallelization with Python threads is made possible because the `Translator` methods release the [Python GIL](https://wiki.python.org/moin/GlobalInterpreterLock).
 
 ## Memory management API
 

@@ -23,7 +23,7 @@ The project is production-oriented and comes with [backward compatibility guaran
 
 * **Fast and efficient execution on CPU and GPU**<br/>The execution [is significantly faster and requires less resources](#benchmarks) than general-purpose deep learning frameworks on supported models and tasks.
 * **Quantization and reduced precision**<br/>The model serialization and computation support weights with reduced precision: 16-bit floating points (FP16), 16-bit integers, and 8-bit integers.
-* **Multiple CPU architectures support**<br/>The project supports x86-64 and ARM64 processors and integrates multiple backends that are optimized for these platforms: [Intel MKL](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl.html), [oneDNN](https://github.com/oneapi-src/oneDNN), [OpenBLAS](https://www.openblas.net/), and [Apple Accelerate](https://developer.apple.com/documentation/accelerate).
+* **Multiple CPU architectures support**<br/>The project supports x86-64 and ARM64 processors and integrates multiple backends that are optimized for these platforms: [Intel MKL](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl.html), [oneDNN](https://github.com/oneapi-src/oneDNN), [OpenBLAS](https://www.openblas.net/), [Ruy](https://github.com/google/ruy), and [Apple Accelerate](https://developer.apple.com/documentation/accelerate).
 * **Automatic CPU detection and code dispatch**<br/>One binary can include multiple backends (e.g. Intel MKL and oneDNN) and instruction set architectures (e.g. AVX, AVX2) that are automatically selected at runtime based on the CPU information.
 * **Parallel and asynchronous translations**<br/>Translations can be run efficiently in parallel and asynchronously using multiple GPUs or CPU cores.
 * **Dynamic memory usage**<br/>The memory usage changes dynamically depending on the request size while still meeting performance requirements thanks to caching allocators on both CPU and GPU.
@@ -236,6 +236,15 @@ Some environment variables can be configured to customize the execution:
   * 2 = debug
   * 3 = trace
 
+When using Python, these variables should be set before importing the `ctranslate2` module, e.g.:
+
+```python
+import os
+os.environ["CT2_VERBOSE"] = "1"
+
+import ctranslate2
+```
+
 ## Building
 
 ### Docker images
@@ -266,6 +275,7 @@ The project uses [CMake](https://cmake.org/) for compilation. The following opti
 | WITH_MKL | OFF, **ON** | Compiles with the Intel MKL backend |
 | WITH_ACCELERATE | **OFF**, ON | Compiles with the Apple Accelerate backend |
 | WITH_OPENBLAS | **OFF**, ON | Compiles with the OpenBLAS backend |
+| WITH_RUY | **OFF**, ON | Compiles with the Ruy backend |
 
 Some build options require external dependencies:
 
@@ -486,7 +496,7 @@ The driver requirement depends on the CUDA version. See the [CUDA Compatibility 
 
 The current approach only exports the weights from existing models and redefines the computation graph via the code. This implies a strong assumption of the graph architecture executed by the original framework.
 
-We are actively looking to ease this assumption by supporting ONNX as model parts.
+We could ease this assumption by supporting ONNX as model parts.
 
 ### What are the future plans?
 
@@ -513,4 +523,14 @@ The [OpenNMT-py REST server](https://forum.opennmt.net/t/simple-opennmt-py-rest-
 
 ### How do I generate a vocabulary mapping file?
 
-See [here](https://github.com/OpenNMT/papers/tree/master/WNMT2018/vmap).
+The vocabulary mapping file (a.k.a. *vmap*) maps source N-grams to a list of target tokens. During translation, the target vocabulary will be dynamically reduced to the union of all target tokens associated with the N-grams from the batch to translate.
+
+It is a text file where each line has the following format:
+
+```text
+src_1 src_2 ... src_N<TAB>tgt_1 tgt_2 ... tgt_K
+```
+
+If the source N-gram is empty (N = 0), the assiocated target tokens will always be included in the reduced vocabulary.
+
+See [here](https://github.com/OpenNMT/papers/tree/master/WNMT2018/vmap) for an example on how to generate this file. The file can then be passed to the converter script to be included in the model directory (see option `--vocab_mapping`) and can be used during translation after enabling the `use_vmap` translation option.

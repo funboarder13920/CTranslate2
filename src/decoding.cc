@@ -37,23 +37,10 @@ namespace ctranslate2
     merge_batch_beam(data);
   }
 
-  static void tile(StorageView &input, const StorageView &repeats)
-  {
-    static const ops::Tile tile_op{};
-    tile_op(input, repeats);
-  }
-
-  static void expand_to_beam_size(StorageView &input, dim_t beam_size)
-  {
-    Shape original_shape(input.shape());
-    Shape tile_shape(input.shape());
-    tile_shape.insert(std::next(tile_shape.begin()), 1);
-    input.reshape(std::move(tile_shape));
-    StorageView repeats({input.rank()}, static_cast<int32_t>(1));
-    repeats.at<int32_t>(1) = beam_size;
-    tile(input, repeats);
-    original_shape[0] *= beam_size;
-    input.reshape(std::move(original_shape));
+  static void expand_to_beam_size(StorageView& input, dim_t beam_size) {
+    input.expand_dims(1);
+    ops::Tile(/*axis=*/1, beam_size)(input);
+    merge_batch_beam(input);
   }
 
   static void expand_to_beam_size(layers::DecoderState &state, dim_t beam_size)
@@ -321,7 +308,7 @@ namespace ctranslate2
                 ids,
                 memory_lengths,
                 state,
-                &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
+                &logits, // output shape: (cur_batch_size*beam_size x vocab_size), if not expanded beam_size is 1
                 (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
         expand_to_beam_size(logits, _beam_size);
         prefix_ids = nullptr;
@@ -331,13 +318,12 @@ namespace ctranslate2
         decoder(step,
                 topk_ids.to(device),
                 state,
-                &logits, // output shape: (cur_batch_size*beam_size x 1 x vocab_size), if not expanded beam_size is 1
+                &logits, // output shape: (cur_batch_size*beam_size x vocab_size), if not expanded beam_size is 1
                 (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
       }
-      if (bias_towards_prefix)
-      {
-        if (!biased_decoder)
-        {
+      if (bias_towards_prefix) {
+        if (!biased_decoder) {
+
           biased_decoder = std::make_unique<BiasedDecoder>();
         }
         biased_decoder->decode(_prefix_bias_beta,
