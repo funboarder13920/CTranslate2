@@ -513,10 +513,12 @@ PYBIND11_MODULE(translator, m)
   py::class_<ctranslate2::TranslationResult>(m, "TranslationResult")
     .def_readonly("hypotheses", &ctranslate2::TranslationResult::hypotheses)
     .def_readonly("scores", &ctranslate2::TranslationResult::scores)
+    .def_readonly("full_scores", &ctranslate2::TranslationResult::full_scores)
     .def_readonly("attention", &ctranslate2::TranslationResult::attention)
     .def("__repr__", [](const ctranslate2::TranslationResult& result) {
       return "TranslationResult(hypotheses=" + std::string(py::repr(py::cast(result.hypotheses)))
         + ", scores=" + std::string(py::repr(py::cast(result.scores)))
+        + ", full_scores=" + std::string(py::repr(py::cast(result.full_scores)))
         + ", attention=" + std::string(py::repr(py::cast(result.attention)))
         + ")";
     })
@@ -528,8 +530,10 @@ PYBIND11_MODULE(translator, m)
         throw std::out_of_range("list index out of range");
       py::dict hypothesis;
       hypothesis["tokens"] = result.hypotheses[i];
-      if (result.has_scores())
+      if (result.has_scores()){
         hypothesis["score"] = result.scores[i];
+        hypothesis["full_scores"] = result.full_scores[i];
+      }
       if (result.has_attention())
         hypothesis["attention"] = result.attention[i];
       return hypothesis;

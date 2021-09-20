@@ -138,10 +138,14 @@ namespace ctranslate2
       idx.resize(max_hypotheses);
 
     result.hypotheses = index_vector(result.hypotheses, idx);
-    if (keep_scores)
+    if (keep_scores) {
       result.scores = index_vector(result.scores, idx);
-    else
+      result.full_scores = index_vector(result.full_scores, idx);
+    }
+    else {
       result.scores.clear();
+      result.full_scores.clear();
+    }
     if (result.has_attention())
       result.attention = index_vector(result.attention, idx);
   }
@@ -254,6 +258,7 @@ namespace ctranslate2
     StorageView gather_indices(DataType::INT32);
     StorageView topk_ids({batch_size}, DataType::INT32);
     StorageView topk_scores(dtype);
+    StorageView full_topk_scores(dtype);
     StorageView topk_log_probs(dtype);
 
     std::vector<bool> top_beam_finished(batch_size, false);
@@ -419,12 +424,18 @@ namespace ctranslate2
       }
       // Append last prediction.
       topk_ids.reshape({cur_batch_size, _beam_size, 1});
+      topk_scores.reshape({cur_batch_size, _beam_size, 1});
       if (alive_seq)
       {
         gather(alive_seq, gather_indices);
         alive_seq.reshape({cur_batch_size, _beam_size, alive_seq.dim(-1)});
         StorageView cur_alive_seq(std::move(alive_seq));
         ops::Concat(-1)({&cur_alive_seq, &topk_ids}, alive_seq);
+
+        gather(full_topk_scores, gather_indices);
+        full_topk_scores.reshape({cur_batch_size, _beam_size, full_topk_scores.dim(-1)});
+        StorageView cur_full_topk_scores(std::move(full_topk_scores));
+        ops::Concat(-1)({&cur_full_topk_scores, &topk_scores}, full_topk_scores);
       }
       else
       {
@@ -432,10 +443,11 @@ namespace ctranslate2
         ids.reshape({cur_batch_size, _beam_size, ids.dim(-1)});
         auto idsDevice = ids.to(topk_ids.device());
         ops::Concat(-1)({&idsDevice, &topk_ids}, alive_seq);
+        full_topk_scores = topk_scores.to(topk_ids.device());
       }
       topk_log_probs.reshape({cur_batch_size, _beam_size});
-
       topk_scores.reshape({cur_batch_size, _beam_size});
+
       topk_ids.reshape({cur_batch_size, _beam_size});
       if (attention_step_device)
       {
@@ -524,6 +536,13 @@ namespace ctranslate2
                 }
               }
               result.scores.emplace_back(score);
+              std::vector<float> full_scores_vector;
+              float retain_score = 0;
+              for (dim_t b = 0; b < full_topk_scores.shape().back(); ++b){
+                retain_score = full_topk_scores.scalar_at<float>({i, k, b}) - retain_score;
+                full_scores_vector.emplace_back(retain_score);
+              }
+              result.full_scores.emplace_back(full_scores_vector);
               result.hypotheses.emplace_back(std::move(hypothesis));
               if (return_attention)
                 result.attention.emplace_back(std::move(attn));
@@ -533,7 +552,6 @@ namespace ctranslate2
         const bool is_finished = (_early_exit
                                       ? top_beam_finished[i] && result.num_hypotheses() >= num_hypotheses
                                       : result.num_hypotheses() >= static_cast<size_t>(_beam_size));
-
         if (is_finished)
         {
           sort_hypotheses(result, num_hypotheses, return_scores);
@@ -601,6 +619,7 @@ namespace ctranslate2
       topk_ids.reshape({cur_batch_size * _beam_size});
       topk_log_probs.reshape({cur_batch_size * _beam_size});
       alive_seq.reshape({cur_batch_size * _beam_size, alive_seq.dim(-1)});
+      full_topk_scores.reshape({cur_batch_size * _beam_size, full_topk_scores.dim(-1)});
       if (return_attention)
         alive_attention.reshape({cur_batch_size * _beam_size,
                                  alive_attention.dim(2),
@@ -710,6 +729,7 @@ namespace ctranslate2
         if (return_scores)
         {
           results[batch_id].scores[0] += best_probs.scalar_at<float>({i});
+          results[batch_id].full_scores[0].emplace_back(best_probs.scalar_at<float>({i}));
         }
         if (true_id != static_cast<int32_t>(end_id))
         {
@@ -906,6 +926,7 @@ namespace ctranslate2
             else
             {
               prefix.scores[i] += suffix.scores[0];
+              prefix.full_scores[i].emplace_back(suffix.scores[0]);
             }
           }
         }

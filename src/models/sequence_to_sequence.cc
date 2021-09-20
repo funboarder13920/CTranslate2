@@ -279,6 +279,7 @@ namespace ctranslate2 {
 
         final_results.emplace_back(std::move(hypotheses),
                                    std::move(result.scores),
+                                   std::move(result.full_scores),
                                    std::move(result.attention));
       }
 

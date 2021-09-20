@@ -10,6 +10,7 @@ namespace ctranslate2 {
   public:
     std::vector<std::vector<T>> hypotheses;
     std::vector<float> scores;
+    std::vector<std::vector<float>> full_scores;
     std::vector<std::vector<std::vector<float>>> attention;
 
     GenerationResult(std::vector<std::vector<T>> hypotheses_)
@@ -26,12 +27,24 @@ namespace ctranslate2 {
     {
     }
 
+    GenerationResult(std::vector<std::vector<T>> hypotheses_,
+                     std::vector<float> scores_,
+                     std::vector<std::vector<float>> full_scores_,
+                     std::vector<std::vector<std::vector<float>>> attention_)
+      : hypotheses(std::move(hypotheses_))
+      , scores(std::move(scores_))
+      , full_scores(std::move(full_scores_))
+      , attention(std::move(attention_))
+    {
+    }
+
     // Construct an empty result.
     GenerationResult(const size_t num_hypotheses,
                      const bool with_attention,
                      const bool with_score)
       : hypotheses(num_hypotheses)
       , scores(with_score ? num_hypotheses : 0, static_cast<float>(0))
+      , full_scores(with_score ? num_hypotheses : 0)
       , attention(with_attention ? num_hypotheses : 0)
     {
     }
