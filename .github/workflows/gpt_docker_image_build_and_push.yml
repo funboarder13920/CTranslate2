@@ -12,8 +12,8 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --target ct2_python -t ct2_gpt:latest -t docker.pkg.github.com/ubiqus/lm_autocomplete/ct2_gpt:1.0.0 -f  docker/Dockerfile .
+          docker build --target ct2_python -t ct2_gpt:latest -t docker.pkg.github.com/funboarder13920/CTranslate2/ct2_gpt:1.0.0 -f  docker/Dockerfile .
 
       - name: Push Docker image
         run: |
-          docker push docker.pkg.github.com/ubiqus/lm_autocomplete/ct2_gpt:1.0.0
+          docker push docker.pkg.github.com/funboarder13920/CTranslate2/ct2_gpt:1.0.0
