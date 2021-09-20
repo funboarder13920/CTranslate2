@@ -12,7 +12,7 @@ jobs:
 
       - name: Build Docker images
         run: |
-          docker build --target builder -t ct2_gpt:latest -t docker.pkg.github.com/ubiqus/lm_autocomplete/ct2_gpt:1.0.0 .
+          docker build --target builder -t ct2_gpt:latest -t docker.pkg.github.com/ubiqus/lm_autocomplete/ct2_gpt:1.0.0 -f  docker/Dockerfile .
 
       # - name: Login to DockerHub
       #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
