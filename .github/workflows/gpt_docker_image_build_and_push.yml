@@ -10,10 +10,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Docker image
         run: |
-          docker build --target ct2_python -t ct2_gpt:latest -t docker.pkg.github.com/funboarder13920/ctranslate2/ct2_gpt:1.0.0 -f  docker/Dockerfile .
+          docker build --target ct2_python -t ct2_gpt:latest -t ghcr.io/funboarder13920/ctranslate2/ct2_gpt:1.0.0 -f  docker/Dockerfile .
 
       - name: Push Docker image
         run: |
-          docker push docker.pkg.github.com/funboarder13920/ctranslate2/ct2_gpt:1.0.0
+          docker push ghcr.io/funboarder13920/ctranslate2/ct2_gpt:1.0.0
