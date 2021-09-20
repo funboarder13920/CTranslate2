@@ -70,7 +70,7 @@ RUN cd python && \
     python3 -m pip --no-cache-dir install -r install_requirements.txt && \
     python3 setup.py bdist_wheel --dist-dir $CTRANSLATE2_ROOT
 
-FROM nvidia/cuda:11.2.2-base-ubuntu20.04
+FROM nvidia/cuda:11.2.2-base-ubuntu20.04 as ct2_python
 
 RUN chmod 0777 /tmp
 RUN apt-get update && \
@@ -93,6 +93,9 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CTRANSLATE2_ROOT/lib
 COPY --from=builder $CTRANSLATE2_ROOT $CTRANSLATE2_ROOT
 RUN python3 -m pip --no-cache-dir install $CTRANSLATE2_ROOT/*.whl && \
     rm $CTRANSLATE2_ROOT/*.whl
+
+
+FROM ct2_python
 
 # COPY serv_OpenNMT-py /serv_OpenNMT-py
 RUN mkdir /serv_OpenNMT-py
