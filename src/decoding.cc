@@ -251,7 +251,7 @@ namespace ctranslate2
     const dim_t max_step = start_step + max_length;
     const Device device = decoder.device();
     const DataType dtype = decoder.output_type();
-    const bool expand_after_first_step = (device == Device::CPU);
+    const bool expand_after_first_step = false;//(device == Device::CPU);
     const dim_t batch_size = start_ids.size();
     dim_t cur_batch_size = batch_size;
 
