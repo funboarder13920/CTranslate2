@@ -271,13 +271,6 @@ namespace ctranslate2
     }
 
     // TODO: fix here for GPU and cpu also, more efficient?
-    if (!expand_after_first_step)
-    {
-      expand_to_beam_size(state, _beam_size);
-      expand_to_beam_size(topk_ids, _beam_size);
-      TYPE_DISPATCH(dtype, initialize_cum_log_probs<T>(topk_log_probs, batch_size, _beam_size));
-    }
-
     std::vector<std::vector<bool>> beams_diverged_from_prefix;
     bool bias_towards_prefix = false; // prefix_ids && _prefix_bias_beta > 0;
     if (bias_towards_prefix)
@@ -316,6 +309,9 @@ namespace ctranslate2
                 &logits, // output shape: (cur_batch_size*beam_size x vocab_size), if not expanded beam_size is 1
                 (return_attention || _coverage_penalty != 0) ? &attention_step_device : nullptr);
         expand_to_beam_size(logits, _beam_size);
+        expand_to_beam_size(state, _beam_size);
+        expand_to_beam_size(topk_ids, _beam_size);
+        TYPE_DISPATCH(dtype, initialize_cum_log_probs<T>(topk_log_probs, batch_size, _beam_size));
         prefix_ids = nullptr;
       }
       else

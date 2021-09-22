@@ -19,7 +19,7 @@ namespace ctranslate2 {
 
   static std::unique_ptr<const SearchStrategy>
   make_search_strategy(const TranslationOptions& options) {
-    if (options.beam_size == 1)
+    if (false && options.beam_size == 1)
       return std::make_unique<GreedySearch>();
     else
       return std::make_unique<BeamSearch>(options.beam_size,

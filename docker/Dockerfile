@@ -100,7 +100,8 @@ FROM ct2_python
 # COPY serv_OpenNMT-py /serv_OpenNMT-py
 RUN mkdir /serv_OpenNMT-py
 WORKDIR /serv_OpenNMT-py
-
+COPY serv_OpenNMT-py/requirements.docker.txt .
+RUN pip install -r requirements.docker.txt
 # RUN ct2-opennmt-py-converter --model_path release_data/model-ref-warmup-8000-lr-1.7-fast-gelu_step_170000.pt --output_dir release_data/ctranslate_model --force
 
 ENV PYTHONPATH "${PYTHONPATH}:/serv_OpenNMT"
